@@ -1,0 +1,89 @@
+{
+  "name": "@vocasync/astro",
+  "version": "0.1.0",
+  "description": "VocaSync integration for Astro - Text-to-speech synthesis and word-level alignment for static sites",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./components": {
+      "types": "./dist/components/index.d.ts",
+      "import": "./dist/components/index.js"
+    },
+    "./components/AudioPlayer.astro": "./dist/components/AudioPlayer.astro",
+    "./rehype": {
+      "types": "./dist/rehype/index.d.ts",
+      "import": "./dist/rehype/index.js"
+    },
+    "./styles": "./dist/styles/variables.css",
+    "./styles/variables.css": "./dist/styles/variables.css"
+  },
+  "bin": {
+    "vocasync": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc && cp -r src/components/*.astro dist/components/ && cp -r src/styles dist/",
+    "dev": "tsc --watch",
+    "check": "biome check .",
+    "check:fix": "biome check --write .",
+    "prepublishOnly": "bun run build"
+  },
+  "keywords": [
+    "astro",
+    "astro-integration",
+    "tts",
+    "text-to-speech",
+    "audio",
+    "alignment",
+    "vocasync",
+    "podcast",
+    "accessibility"
+  ],
+  "author": "Sayed Hamid Fatimi <sayedhfatimi@pm.me> (https://github.com/sayedhfatimi)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sayedhfatimi/vocasync-astro.git"
+  },
+  "homepage": "https://github.com/sayedhfatimi/vocasync-astro#readme",
+  "bugs": {
+    "url": "https://github.com/sayedhfatimi/vocasync-astro/issues"
+  },
+  "peerDependencies": {
+    "astro": "^4.0.0 || ^5.0.0",
+    "speech-rule-engine": "^4.0.0",
+    "mathjax-full": "^3.2.0"
+  },
+  "peerDependenciesMeta": {
+    "speech-rule-engine": {
+      "optional": true
+    },
+    "mathjax-full": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "zod": "^3.23.0",
+    "unified": "^11.0.0",
+    "remark-parse": "^11.0.0",
+    "remark-math": "^6.0.0",
+    "unist-util-visit-parents": "^6.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@types/hast": "^3.0.4",
+    "@types/mdast": "^4.0.4",
+    "@types/node": "^22.0.0",
+    "astro": "^5.0.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

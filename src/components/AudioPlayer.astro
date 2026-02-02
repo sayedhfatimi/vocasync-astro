@@ -1,0 +1,1097 @@
+---
+/**
+ * VocaSync AudioPlayer Component
+ * 
+ * A full-featured audio player with word-level highlighting support.
+ * Uses native HTML5 audio and range inputs - no external dependencies.
+ * 
+ * @example
+ * ```astro
+ * <AudioPlayer 
+ *   slug={post.slug} 
+ *   label="Listen to this article"
+ *   enableMiniPlayer={true}
+ * />
+ * ```
+ */
+
+import type { AlignedWord } from "../types/index.js";
+
+interface AudioEntry {
+  audioUrl: string;
+  alignmentUrl?: string;
+  words?: AlignedWord[];
+  duration?: number;
+}
+
+interface Props {
+  /** Post slug to lookup audio in audio-map */
+  slug: string;
+  /** Audio entry data (from audio-map.json import) */
+  audioEntry?: AudioEntry;
+  /** Accessible label for the player */
+  label?: string;
+  /** Show placeholder when no audio available */
+  showPlaceholder?: boolean;
+  /** Additional CSS classes */
+  class?: string;
+  /** Selector for article body (for word highlighting) */
+  articleSelector?: string;
+  /** Enable floating mini player when main player scrolls out of view */
+  enableMiniPlayer?: boolean;
+  /** Enable word highlighting during playback */
+  enableHighlighting?: boolean;
+  /** Number of trailing highlighted words */
+  trailLength?: number;
+}
+
+const {
+  slug,
+  audioEntry,
+  label = "Listen to this article",
+  showPlaceholder = true,
+  class: className = "",
+  articleSelector = "[data-article-body]",
+  enableMiniPlayer = true,
+  enableHighlighting = true,
+  trailLength = 4,
+} = Astro.props;
+
+// Generate unique IDs for this player instance
+const playerId = `vocasync-player-${slug.replace(/[^a-z0-9]/gi, "-")}`;
+const audioId = `${playerId}-audio`;
+
+// Serialize audio data for client-side use
+const audioDataJson = audioEntry ? JSON.stringify({
+  audioUrl: audioEntry.audioUrl,
+  words: audioEntry.words || [],
+  duration: audioEntry.duration,
+}) : null;
+---
+
+<div 
+  class:list={["vocasync-player", className]}
+  id={playerId}
+  data-slug={slug}
+  data-audio-entry={audioDataJson}
+  data-article-selector={articleSelector}
+  data-enable-mini={enableMiniPlayer}
+  data-enable-highlighting={enableHighlighting}
+  data-trail-length={trailLength}
+  aria-label={label}
+  tabindex="0"
+>
+  <!-- Hidden audio element -->
+  <audio id={audioId} preload="metadata"></audio>
+  
+  <!-- Loading state -->
+  <div class="vocasync-player__loading" data-state="loading">
+    <div class="vocasync-player__spinner"></div>
+    <span>Loading audio...</span>
+  </div>
+  
+  <!-- No audio placeholder -->
+  <div class="vocasync-player__placeholder" data-state="no-audio" hidden>
+    {showPlaceholder && (
+      <span class="vocasync-player__placeholder-text">
+        Audio not available for this article
+      </span>
+    )}
+  </div>
+  
+  <!-- Main player controls -->
+  <div class="vocasync-player__controls" data-state="ready" hidden>
+    <!-- Play/Pause button -->
+    <button 
+      type="button" 
+      class="vocasync-player__play-btn"
+      aria-label="Play"
+      data-action="play-pause"
+      title="Play/Pause (Space)"
+    >
+      <svg class="vocasync-icon vocasync-icon--play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M8 5v14l11-7z"/>
+      </svg>
+      <svg class="vocasync-icon vocasync-icon--pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" hidden>
+        <rect x="6" y="4" width="4" height="16"/>
+        <rect x="14" y="4" width="4" height="16"/>
+      </svg>
+    </button>
+    
+    <!-- Progress section -->
+    <div class="vocasync-player__progress-section">
+      <!-- Time display -->
+      <div class="vocasync-player__time">
+        <span data-time="current">0:00</span>
+        <span class="vocasync-player__time-sep">/</span>
+        <span data-time="duration">0:00</span>
+      </div>
+      
+      <!-- Progress bar -->
+      <input 
+        type="range" 
+        class="vocasync-player__progress"
+        min="0" 
+        max="100" 
+        value="0"
+        step="0.1"
+        aria-label="Seek"
+        data-action="seek"
+        title="Seek (Arrow keys)"
+      />
+    </div>
+    
+    <!-- Control buttons group -->
+    <div class="vocasync-player__button-group">
+      <!-- Highlighting toggle -->
+      <button 
+        type="button" 
+        class="vocasync-player__icon-btn"
+        aria-label="Toggle word highlighting"
+        data-action="toggle-highlighting"
+        data-highlighting="on"
+        title="Toggle highlighting (H)"
+      >
+        <svg class="vocasync-icon vocasync-icon--highlight-on" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M15.6 2.3L12 2l-3.6.3-.2.4L11 6h2l2.8-3.3-.2-.4zM2 22h20v-2H2v2zm1-3h18l-1.5-7.6-.5-.4h-14l-.5.4L3 19zm6-2H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2zm-5-5h-1l-1-4h3l-1 4z"/>
+        </svg>
+        <svg class="vocasync-icon vocasync-icon--highlight-off" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" hidden>
+          <path d="M15.6 2.3L12 2l-3.6.3-.2.4L11 6h2l2.8-3.3-.2-.4zM2 22h20v-2H2v2zm1-3h18l-1.5-7.6-.5-.4h-14l-.5.4L3 19zm6-2H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2zm-5-5h-1l-1-4h3l-1 4z" opacity="0.3"/>
+          <line x1="4" y1="4" x2="20" y2="20" stroke="currentColor" stroke-width="2"/>
+        </svg>
+      </button>
+
+      <!-- Speed control -->
+      <div class="vocasync-player__speed">
+        <button 
+          type="button" 
+          class="vocasync-player__speed-btn"
+          aria-label="Playback speed"
+          data-action="speed"
+        >
+          <span data-speed-label>1x</span>
+        </button>
+        <div class="vocasync-player__speed-menu" hidden>
+          <button type="button" data-speed="0.5">0.5x</button>
+          <button type="button" data-speed="0.75">0.75x</button>
+          <button type="button" data-speed="1" data-active>1x</button>
+          <button type="button" data-speed="1.25">1.25x</button>
+          <button type="button" data-speed="1.5">1.5x</button>
+          <button type="button" data-speed="2">2x</button>
+        </div>
+      </div>
+      
+      <!-- Volume control -->
+      <div class="vocasync-player__volume">
+        <button 
+          type="button" 
+          class="vocasync-player__icon-btn"
+          aria-label="Toggle mute"
+          data-action="mute"
+          title="Toggle mute (M)"
+        >
+        <svg class="vocasync-icon vocasync-icon--volume-high" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+        </svg>
+        <svg class="vocasync-icon vocasync-icon--volume-mute" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" hidden>
+          <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+        </svg>
+      </button>
+      <input 
+        type="range" 
+        class="vocasync-player__volume-slider"
+        min="0" 
+        max="100" 
+        value="100"
+        aria-label="Volume"
+        data-action="volume"
+      />
+      </div>
+      class="vocasync-mini-player__play-btn"
+      aria-label="Play"
+      data-action="play-pause"
+    >
+      <svg class="vocasync-icon vocasync-icon--play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M8 5v14l11-7z"/>
+      </svg>
+      <svg class="vocasync-icon vocasync-icon--pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" hidden>
+        <rect x="6" y="4" width="4" height="16"/>
+        <rect x="14" y="4" width="4" height="16"/>
+      </svg>
+    </button>
+    <div class="vocasync-mini-player__progress">
+      <div class="vocasync-mini-player__progress-bar" data-progress></div>
+    </div>
+    <span class="vocasync-mini-player__time" data-time="current">0:00</span>
+    <button 
+      type="button" 
+      class="vocasync-mini-player__close-btn"
+      aria-label="Close mini player"
+      data-action="close-mini"
+    >
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+      </svg>
+    </button>
+  </div>
+)}
+
+<style>
+  /* ========================================
+   * MAIN PLAYER STYLES
+   * ======================================== */
+  
+  .vocasync-player {
+    display: flex;
+    flex-direction: column;
+    gap: var(--vocasync-player-gap);
+    padding: var(--vocasync-player-padding);
+    background: var(--vocasync-surface);
+    border: 1px solid var(--vocasync-border);
+    border-radius: var(--vocasync-player-radius);
+    box-shadow: var(--vocasync-shadow-sm);
+  }
+
+  .vocasync-player:focus-visible {
+    outline: 2px solid var(--vocasync-border-focus);
+    outline-offset: 2px;
+  }
+  
+  .vocasync-player__loading,
+  .vocasync-player__placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    color: var(--vocasync-text-muted);
+    font-size: 0.875rem;
+  }
+  
+  /* Hidden state for loading/placeholder/controls - overrides display: flex */
+  .vocasync-player__loading[hidden],
+  .vocasync-player__placeholder[hidden],
+  .vocasync-player__controls[hidden] {
+    display: none !important;
+  }
+  
+  .vocasync-player__spinner {
+    width: 1.25rem;
+    height: 1.25rem;
+    border: 2px solid var(--vocasync-border);
+    border-top-color: var(--vocasync-primary);
+    border-radius: 50%;
+    animation: vocasync-spin 0.75s linear infinite;
+  }
+  
+  @keyframes vocasync-spin {
+    to { transform: rotate(360deg); }
+  }
+  
+  .vocasync-player__controls {
+    display: flex;
+    align-items: center;
+    gap: var(--vocasync-player-gap);
+  }
+  
+  /* Play button */
+  .vocasync-player__play-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--vocasync-button-size);
+    height: var(--vocasync-button-size);
+    flex-shrink: 0;
+    background: var(--vocasync-primary);
+    color: var(--vocasync-primary-content);
+    border: none;
+    border-radius: var(--vocasync-button-radius);
+    cursor: pointer;
+    transition: background-color var(--vocasync-transition-fast);
+  }
+  
+  .vocasync-player__play-btn:hover {
+    background: var(--vocasync-primary-hover);
+  }
+  
+  .vocasync-player__play-btn:focus-visible {
+    outline: 2px solid var(--vocasync-border-focus);
+    outline-offset: 2px;
+  }
+  
+  .vocasync-icon {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+  
+  /* Progress section */
+  .vocasync-player__progress-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .vocasync-player__time {
+    display: flex;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--vocasync-text-muted);
+  }
+  
+  .vocasync-player__time-sep {
+    color: var(--vocasync-text-faint);
+  }
+  
+  /* Range input (progress & volume) */
+  .vocasync-player__progress,
+  .vocasync-player__volume-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: var(--vocasync-slider-height);
+    background: var(--vocasync-border);
+    border-radius: var(--vocasync-slider-radius);
+    cursor: pointer;
+  }
+  
+  .vocasync-player__progress::-webkit-slider-thumb,
+  .vocasync-player__volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: var(--vocasync-slider-thumb-size);
+    height: var(--vocasync-slider-thumb-size);
+    background: var(--vocasync-primary);
+    border-radius: 50%;
+    border: none;
+    box-shadow: var(--vocasync-shadow);
+    transition: transform var(--vocasync-transition-fast);
+  }
+  
+  .vocasync-player__progress::-webkit-slider-thumb:hover,
+  .vocasync-player__volume-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+  }
+  
+  .vocasync-player__progress::-moz-range-thumb,
+  .vocasync-player__volume-slider::-moz-range-thumb {
+    width: var(--vocasync-slider-thumb-size);
+    height: var(--vocasync-slider-thumb-size);
+    background: var(--vocasync-primary);
+    border-radius: 50%;
+    border: none;
+    box-shadow: var(--vocasync-shadow);
+  }
+  
+  /* Button group */
+  .vocasync-player__button-group {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  
+  /* Icon buttons (highlight toggle, mute) */
+  .vocasync-player__icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    color: var(--vocasync-text-muted);
+    background: transparent;
+    border: none;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: color var(--vocasync-transition-fast), background-color var(--vocasync-transition-fast);
+  }
+  
+  .vocasync-player__icon-btn:hover {
+    color: var(--vocasync-text);
+    background: var(--vocasync-border);
+  }
+  
+  .vocasync-player__icon-btn:focus-visible {
+    outline: 2px solid var(--vocasync-border-focus);
+    outline-offset: 2px;
+  }
+  
+  .vocasync-player__icon-btn[data-highlighting="off"] {
+    color: var(--vocasync-text-faint);
+  }
+  
+  /* Speed control */
+  .vocasync-player__speed {
+    position: relative;
+  }
+  
+  .vocasync-player__speed-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.5rem;
+    height: 1.75rem;
+    padding: 0 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--vocasync-text-muted);
+    background: var(--vocasync-surface-elevated);
+    border: 1px solid var(--vocasync-border);
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: all var(--vocasync-transition-fast);
+  }
+  
+  .vocasync-player__speed-btn:hover {
+    color: var(--vocasync-text);
+    border-color: var(--vocasync-primary);
+  }
+  
+  .vocasync-player__speed-menu {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    padding: 0.25rem;
+    margin-bottom: 0.5rem;
+    background: var(--vocasync-surface-elevated);
+    border: 1px solid var(--vocasync-border);
+    border-radius: 0.5rem;
+    box-shadow: var(--vocasync-shadow-lg);
+    z-index: 10;
+  }
+  
+  .vocasync-player__speed-menu button {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    color: var(--vocasync-text-muted);
+    background: transparent;
+    border: none;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all var(--vocasync-transition-fast);
+  }
+  
+  .vocasync-player__speed-menu button:hover {
+    background: var(--vocasync-border);
+    color: var(--vocasync-text);
+  }
+  
+  .vocasync-player__speed-menu button[data-active] {
+    background: var(--vocasync-primary);
+    color: var(--vocasync-primary-content);
+  }
+  
+  /* Volume control */
+  .vocasync-player__volume {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  
+  .vocasync-player__volume-slider {
+    width: 4rem;
+  }
+  
+  /* Hide volume slider on mobile */
+  @media (max-width: 640px) {
+    .vocasync-player__volume-slider {
+      display: none;
+    }
+  }
+  
+  /* ========================================
+   * MINI PLAYER STYLES
+   * ======================================== */
+  
+  .vocasync-mini-player {
+    position: fixed;
+    bottom: var(--vocasync-mini-offset);
+    left: var(--vocasync-mini-offset);
+    right: var(--vocasync-mini-offset);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    height: var(--vocasync-mini-height);
+    padding: 0 1rem;
+    background: var(--vocasync-surface-elevated);
+    border: 1px solid var(--vocasync-border);
+    border-radius: 9999px;
+    box-shadow: var(--vocasync-shadow-lg);
+    z-index: 1000;
+    transition: transform var(--vocasync-transition), opacity var(--vocasync-transition);
+  }
+  
+  .vocasync-mini-player[hidden] {
+    display: flex; /* Override hidden for animation */
+    opacity: 0;
+    transform: translateY(100%);
+    pointer-events: none;
+  }
+  
+  .vocasync-mini-player:not([hidden]) {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  
+  .vocasync-mini-player__play-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    flex-shrink: 0;
+    background: var(--vocasync-primary);
+    color: var(--vocasync-primary-content);
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  
+  .vocasync-mini-player__play-btn .vocasync-icon {
+    width: 1rem;
+    height: 1rem;
+  }
+  
+  .vocasync-mini-player__progress {
+    flex: 1;
+    height: 0.25rem;
+    background: var(--vocasync-border);
+    border-radius: 9999px;
+    overflow: hidden;
+  }
+  
+  .vocasync-mini-player__progress-bar {
+    height: 100%;
+    background: var(--vocasync-primary);
+    border-radius: 9999px;
+    transition: width 100ms linear;
+  }
+  
+  .vocasync-mini-player__time {
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--vocasync-text-muted);
+    min-width: 2.5rem;
+  }
+  
+  .vocasync-mini-player__close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    color: var(--vocasync-text-faint);
+    background: transparent;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: color var(--vocasync-transition-fast);
+  }
+  
+  .vocasync-mini-player__close-btn:hover {
+    color: var(--vocasync-text);
+  }
+  
+  .vocasync-mini-player__close-btn svg {
+    width: 1rem;
+    height: 1rem;
+  }
+  
+  /* Desktop: constrain mini player width */
+  @media (min-width: 640px) {
+    .vocasync-mini-player {
+      left: auto;
+      right: var(--vocasync-mini-offset);
+      max-width: 20rem;
+    }
+  }
+
+  /* ========================================
+   * MATH SPEECH (hidden visually, accessible to highlighter)
+   * ======================================== */
+  :global(.vocasync-math-speech) {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+  }
+
+  /* Hide KaTeX HTML fallback rendering (keep MathML for native browser rendering) */
+  :global(.katex-html) {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+  }
+</style>
+
+<script define:vars={{ playerId, audioId, slug, articleSelector, enableHighlighting, enableMiniPlayer, trailLength }}>
+  // Self-invoking function to avoid global scope pollution
+  (function() {
+    const player = document.getElementById(playerId);
+    const audio = document.getElementById(audioId);
+    const miniPlayer = enableMiniPlayer ? document.getElementById(`${playerId}-mini`) : null;
+    
+    if (!player || !audio) return;
+    
+    // State
+    let isPlaying = false;
+    let isMiniVisible = false;
+    let animationFrame = null;
+    let miniDismissed = false;
+    let highlightingEnabled = enableHighlighting;
+    
+    // DOM elements
+    const loadingEl = player.querySelector('[data-state="loading"]');
+    const placeholderEl = player.querySelector('[data-state="no-audio"]');
+    const controlsEl = player.querySelector('[data-state="ready"]');
+    const playBtn = player.querySelector('[data-action="play-pause"]');
+    const progressInput = player.querySelector('[data-action="seek"]');
+    const volumeInput = player.querySelector('[data-action="volume"]');
+    const muteBtn = player.querySelector('[data-action="mute"]');
+    const speedBtn = player.querySelector('[data-action="speed"]');
+    const speedMenu = player.querySelector('.vocasync-player__speed-menu');
+    const highlightBtn = player.querySelector('[data-action="toggle-highlighting"]');
+    const currentTimeEl = player.querySelector('[data-time="current"]');
+    const durationTimeEl = player.querySelector('[data-time="duration"]');
+    
+    // Format time as M:SS
+    function formatTime(seconds) {
+      if (!seconds || !isFinite(seconds)) return '0:00';
+      const m = Math.floor(seconds / 60);
+      const s = Math.floor(seconds % 60);
+      return `${m}:${s.toString().padStart(2, '0')}`;
+    }
+    
+    // Update play/pause button icon
+    function updatePlayButton(playing) {
+      const playIcon = player.querySelector('.vocasync-icon--play');
+      const pauseIcon = player.querySelector('.vocasync-icon--pause');
+      if (playIcon && pauseIcon) {
+        playIcon.hidden = playing;
+        pauseIcon.hidden = !playing;
+        playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+      }
+      
+      // Update mini player too
+      if (miniPlayer) {
+        const miniPlayIcon = miniPlayer.querySelector('.vocasync-icon--play');
+        const miniPauseIcon = miniPlayer.querySelector('.vocasync-icon--pause');
+        if (miniPlayIcon && miniPauseIcon) {
+          miniPlayIcon.hidden = playing;
+          miniPauseIcon.hidden = !playing;
+        }
+      }
+    }
+    
+    // Update volume icon
+    function updateVolumeIcon(muted) {
+      const highIcon = player.querySelector('.vocasync-icon--volume-high');
+      const muteIcon = player.querySelector('.vocasync-icon--volume-mute');
+      if (highIcon && muteIcon) {
+        highIcon.hidden = muted;
+        muteIcon.hidden = !muted;
+      }
+    }
+    
+    // Update highlighting toggle button
+    function updateHighlightButton() {
+      if (!highlightBtn) return;
+      const onIcon = highlightBtn.querySelector('.vocasync-icon--highlight-on');
+      const offIcon = highlightBtn.querySelector('.vocasync-icon--highlight-off');
+      if (onIcon && offIcon) {
+        onIcon.hidden = !highlightingEnabled;
+        offIcon.hidden = highlightingEnabled;
+      }
+      highlightBtn.setAttribute('data-highlighting', highlightingEnabled ? 'on' : 'off');
+      highlightBtn.setAttribute('aria-label', highlightingEnabled ? 'Disable word highlighting' : 'Enable word highlighting');
+    }
+    
+    // Word highlighting state (populated from DOM)
+    let wordEls = [];
+    let starts = [];
+    let ends = [];
+    let activeIndex = -1;
+    
+    // Initialize word highlighting from DOM elements
+    function initWordHighlighting() {
+      const article = document.querySelector(articleSelector);
+      if (!article) return false;
+      
+      wordEls = Array.from(article.querySelectorAll('.vocasync-word[data-start][data-end]'));
+      if (!wordEls.length) return false;
+      
+      starts = [];
+      ends = [];
+      for (let i = 0; i < wordEls.length; i++) {
+        starts[i] = Number(wordEls[i].dataset.start || '0');
+        ends[i] = Number(wordEls[i].dataset.end || '0');
+        if (!(ends[i] >= starts[i])) ends[i] = starts[i] + 0.0001;
+      }
+      return true;
+    }
+    
+    // Binary search: find index of word for current time
+    function idxForTime(t) {
+      if (!wordEls.length) return -1;
+      let lo = 0, hi = wordEls.length - 1, ans = -1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (starts[mid] <= t) { ans = mid; lo = mid + 1; } else { hi = mid - 1; }
+      }
+      if (ans >= 0 && t >= ends[ans] && ans + 1 < wordEls.length) ans++;
+      // Only return if we're actually within the word's time range
+      if (ans >= 0 && t >= starts[ans] && t < ends[ans]) return ans;
+      return ans;
+    }
+    
+    // Clear all highlights
+    function clearHighlights() {
+      if (activeIndex >= 0 && activeIndex < wordEls.length) {
+        wordEls[activeIndex].removeAttribute('data-active');
+        for (let j = 1; j <= trailLength; j++) {
+          const k = activeIndex - j;
+          if (k >= 0) wordEls[k].removeAttribute('data-trail');
+        }
+      }
+      activeIndex = -1;
+    }
+    
+    // Mark a word as active
+    function markActive(i) {
+      if (i === activeIndex) return;
+      if (activeIndex >= 0 && activeIndex < wordEls.length) {
+        wordEls[activeIndex].removeAttribute('data-active');
+        for (let j = 1; j <= trailLength; j++) {
+          const k = activeIndex - j;
+          if (k >= 0) wordEls[k].removeAttribute('data-trail');
+        }
+      }
+      activeIndex = i;
+      if (highlightingEnabled && i >= 0 && i < wordEls.length) {
+        wordEls[i].setAttribute('data-active', 'true');
+        for (let j = 1; j <= trailLength; j++) {
+          const k = i - j;
+          if (k >= 0) wordEls[k].setAttribute('data-trail', String(j));
+        }
+      }
+    }
+    
+    // Update word highlighting based on current time
+    function updateHighlighting() {
+      if (!wordEls.length) return;
+      const t = audio.currentTime;
+      const i = idxForTime(t);
+      if (i !== activeIndex) {
+        markActive(i);
+      }
+    }
+    
+    // Animation loop for highlighting
+    function startHighlightLoop() {
+      function loop() {
+        if (isPlaying) {
+          updateHighlighting();
+          animationFrame = requestAnimationFrame(loop);
+        }
+      }
+      animationFrame = requestAnimationFrame(loop);
+    }
+    
+    function stopHighlightLoop() {
+      if (animationFrame) {
+        cancelAnimationFrame(animationFrame);
+        animationFrame = null;
+      }
+    }
+    
+    // Toggle highlighting on/off
+    function toggleHighlighting() {
+      highlightingEnabled = !highlightingEnabled;
+      updateHighlightButton();
+      if (!highlightingEnabled) {
+        clearHighlights();
+      } else if (isPlaying) {
+        updateHighlighting();
+      }
+    }
+    
+    // Setup intersection observer for mini player
+    function setupMiniPlayer() {
+      if (!miniPlayer || !enableMiniPlayer) return;
+      
+      const observer = new IntersectionObserver(
+        (entries) => {
+          const [entry] = entries;
+          const shouldShow = !entry.isIntersecting && isPlaying && !miniDismissed;
+          
+          if (shouldShow && !isMiniVisible) {
+            miniPlayer.hidden = false;
+            isMiniVisible = true;
+          } else if (!shouldShow && isMiniVisible) {
+            miniPlayer.hidden = true;
+            isMiniVisible = false;
+          }
+        },
+        { threshold: 0 }
+      );
+      
+      observer.observe(player);
+      
+      // Mini player controls
+      const miniPlayBtn = miniPlayer.querySelector('[data-action="play-pause"]');
+      const miniCloseBtn = miniPlayer.querySelector('[data-action="close-mini"]');
+      
+      miniPlayBtn?.addEventListener('click', togglePlay);
+      miniCloseBtn?.addEventListener('click', () => {
+        miniDismissed = true;
+        miniPlayer.hidden = true;
+        isMiniVisible = false;
+      });
+    }
+    
+    // Update mini player progress
+    function updateMiniProgress() {
+      if (!miniPlayer) return;
+      
+      const progressBar = miniPlayer.querySelector('[data-progress]');
+      const timeEl = miniPlayer.querySelector('[data-time="current"]');
+      
+      if (progressBar) {
+        const percent = (audio.currentTime / audio.duration) * 100 || 0;
+        progressBar.style.width = `${percent}%`;
+      }
+      
+      if (timeEl) {
+        timeEl.textContent = formatTime(audio.currentTime);
+      }
+    }
+    
+    // Setup click handlers for pre-wrapped words (from rehype plugin)
+    function setupWordClickHandlers() {
+      const article = document.querySelector(articleSelector);
+      if (!article) return;
+      
+      const wordSpans = article.querySelectorAll('.vocasync-word[data-start]');
+      wordSpans.forEach((span) => {
+        span.style.cursor = 'pointer';
+        span.addEventListener('click', () => {
+          const start = parseFloat(span.getAttribute('data-start') || '0');
+          audio.currentTime = start;
+          if (audio.paused) {
+            audio.play();
+          }
+        });
+      });
+    }
+    
+    // Load audio map and initialize
+    async function init() {
+      try {
+        // Get audio data from embedded data attribute
+        const audioDataAttr = player.dataset.audioEntry;
+        
+        if (!audioDataAttr) {
+          showNoAudio();
+          return;
+        }
+        
+        let entry;
+        try {
+          entry = JSON.parse(audioDataAttr);
+        } catch {
+          showNoAudio();
+          return;
+        }
+        
+        if (!entry || !entry.audioUrl) {
+          showNoAudio();
+          return;
+        }
+        
+        // Set audio source
+        audio.src = entry.audioUrl;
+        
+        // Initialize word highlighting from DOM spans (from rehype plugin)
+        // Defer to DOMContentLoaded since the content div comes after the player in the HTML
+        if (enableHighlighting) {
+          const initHighlighting = () => {
+            initWordHighlighting();
+            setupWordClickHandlers();
+          };
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initHighlighting);
+          } else {
+            // DOM already loaded
+            initHighlighting();
+          }
+        }
+        
+        // Show controls
+        showReady();
+        
+        // Setup mini player
+        setupMiniPlayer();
+        
+        // Initialize highlight button state
+        updateHighlightButton();
+        
+      } catch (error) {
+        console.error('VocaSync: Failed to initialize player', error);
+        showNoAudio();
+      }
+    }
+    
+    function showLoading() {
+      loadingEl.hidden = false;
+      placeholderEl.hidden = true;
+      controlsEl.hidden = true;
+    }
+    
+    function showNoAudio() {
+      loadingEl.hidden = true;
+      placeholderEl.hidden = false;
+      controlsEl.hidden = true;
+    }
+    
+    function showReady() {
+      loadingEl.hidden = true;
+      placeholderEl.hidden = true;
+      controlsEl.hidden = false;
+    }
+    
+    function togglePlay() {
+      if (audio.paused) {
+        audio.play();
+      } else {
+        audio.pause();
+      }
+    }
+    
+    // Event listeners
+    playBtn?.addEventListener('click', togglePlay);
+    highlightBtn?.addEventListener('click', toggleHighlighting);
+    
+    audio.addEventListener('play', () => {
+      isPlaying = true;
+      updatePlayButton(true);
+      startHighlightLoop();
+      miniDismissed = false;
+    });
+    
+    audio.addEventListener('pause', () => {
+      isPlaying = false;
+      updatePlayButton(false);
+      stopHighlightLoop();
+    });
+    
+    audio.addEventListener('ended', () => {
+      isPlaying = false;
+      updatePlayButton(false);
+      stopHighlightLoop();
+    });
+    
+    audio.addEventListener('loadedmetadata', () => {
+      durationTimeEl.textContent = formatTime(audio.duration);
+      progressInput.max = audio.duration;
+    });
+    
+    audio.addEventListener('timeupdate', () => {
+      currentTimeEl.textContent = formatTime(audio.currentTime);
+      progressInput.value = audio.currentTime;
+      updateMiniProgress();
+    });
+    
+    progressInput?.addEventListener('input', () => {
+      audio.currentTime = parseFloat(progressInput.value);
+    });
+    
+    volumeInput?.addEventListener('input', () => {
+      audio.volume = parseFloat(volumeInput.value) / 100;
+      updateVolumeIcon(audio.volume === 0);
+    });
+    
+    muteBtn?.addEventListener('click', () => {
+      audio.muted = !audio.muted;
+      updateVolumeIcon(audio.muted);
+    });
+    
+    speedBtn?.addEventListener('click', () => {
+      speedMenu.hidden = !speedMenu.hidden;
+    });
+    
+    speedMenu?.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-speed]');
+      if (!btn) return;
+      
+      const speed = parseFloat(btn.dataset.speed);
+      audio.playbackRate = speed;
+      
+      // Update active state
+      speedMenu.querySelectorAll('[data-speed]').forEach(b => b.removeAttribute('data-active'));
+      btn.setAttribute('data-active', '');
+      
+      // Update label
+      const label = player.querySelector('[data-speed-label]');
+      if (label) label.textContent = `${speed}x`;
+      
+      speedMenu.hidden = true;
+    });
+    
+    // Close speed menu on outside click
+    document.addEventListener('click', (e) => {
+      if (!speedBtn?.contains(e.target) && !speedMenu?.contains(e.target)) {
+        if (speedMenu) speedMenu.hidden = true;
+      }
+    });
+    
+    // Keyboard shortcuts
+    player.addEventListener('keydown', (e) => {
+      // Don't handle if focus is on an input
+      if (e.target.tagName === 'INPUT') return;
+      
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault();
+          togglePlay();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          audio.currentTime = Math.max(0, audio.currentTime - 5);
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 5);
+          break;
+        case 'KeyM':
+          e.preventDefault();
+          audio.muted = !audio.muted;
+          updateVolumeIcon(audio.muted);
+          break;
+        case 'KeyH':
+          e.preventDefault();
+          toggleHighlighting();
+          break;
+      }
+    });
+    
+    // Initialize
+    init();
+  })();
+</script>

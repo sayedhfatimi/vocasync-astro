@@ -1,0 +1,30 @@
+export {
+  VocaSyncConfigSchema,
+  CollectionConfigSchema,
+  SynthesisConfigSchema,
+  MathConfigSchema,
+  OutputConfigSchema,
+  ProcessingConfigSchema,
+  VoiceSchema,
+  QualitySchema,
+  FormatSchema,
+  LanguageSchema,
+  MathStyleSchema,
+  validateConfig,
+  defaultConfig,
+} from "./schema.js";
+
+export type {
+  VocaSyncConfig,
+  VocaSyncUserConfig,
+  CollectionConfig,
+  SynthesisConfig,
+  MathConfig,
+  OutputConfig,
+  ProcessingConfig,
+  Voice,
+  Quality,
+  Format,
+  Language,
+  MathStyle,
+} from "./schema.js";
