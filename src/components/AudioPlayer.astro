@@ -110,11 +110,10 @@ const audioDataJson = audioEntry ? JSON.stringify({
       title="Play/Pause (Space)"
     >
       <svg class="vocasync-icon vocasync-icon--play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M8 5v14l11-7z"/>
+        <path d="M6 4l15 8-15 8V4z"/>
       </svg>
-      <svg class="vocasync-icon vocasync-icon--pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" hidden>
-        <rect x="6" y="4" width="4" height="16"/>
-        <rect x="14" y="4" width="4" height="16"/>
+      <svg class="vocasync-icon vocasync-icon--pause vocasync-hidden" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
       </svg>
     </button>
     
@@ -152,12 +151,15 @@ const audioDataJson = audioEntry ? JSON.stringify({
         data-highlighting="on"
         title="Toggle highlighting (H)"
       >
-        <svg class="vocasync-icon vocasync-icon--highlight-on" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path d="M15.6 2.3L12 2l-3.6.3-.2.4L11 6h2l2.8-3.3-.2-.4zM2 22h20v-2H2v2zm1-3h18l-1.5-7.6-.5-.4h-14l-.5.4L3 19zm6-2H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2zm-5-5h-1l-1-4h3l-1 4z"/>
+        <svg class="vocasync-icon vocasync-icon--highlight-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3v18"/>
+          <rect x="4" y="8" width="16" height="8" rx="1" fill="currentColor" opacity="0.3"/>
+          <path d="M8 12h8"/>
         </svg>
-        <svg class="vocasync-icon vocasync-icon--highlight-off" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" hidden>
-          <path d="M15.6 2.3L12 2l-3.6.3-.2.4L11 6h2l2.8-3.3-.2-.4zM2 22h20v-2H2v2zm1-3h18l-1.5-7.6-.5-.4h-14l-.5.4L3 19zm6-2H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2zm-5-5h-1l-1-4h3l-1 4z" opacity="0.3"/>
-          <line x1="4" y1="4" x2="20" y2="20" stroke="currentColor" stroke-width="2"/>
+        <svg class="vocasync-icon vocasync-icon--highlight-off vocasync-hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3v18" opacity="0.3"/>
+          <rect x="4" y="8" width="16" height="8" rx="1" opacity="0.3"/>
+          <path d="M4 4l16 16"/>
         </svg>
       </button>
 
@@ -190,11 +192,15 @@ const audioDataJson = audioEntry ? JSON.stringify({
           data-action="mute"
           title="Toggle mute (M)"
         >
-        <svg class="vocasync-icon vocasync-icon--volume-high" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+        <svg class="vocasync-icon vocasync-icon--volume-high" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor"/>
+          <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
         </svg>
-        <svg class="vocasync-icon vocasync-icon--volume-mute" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" hidden>
-          <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+        <svg class="vocasync-icon vocasync-icon--volume-mute vocasync-hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" opacity="0.5"/>
+          <line x1="23" y1="9" x2="17" y2="15"/>
+          <line x1="17" y1="9" x2="23" y2="15"/>
         </svg>
       </button>
       <input 
@@ -207,16 +213,23 @@ const audioDataJson = audioEntry ? JSON.stringify({
         data-action="volume"
       />
       </div>
+    </div>
+  </div>
+
+  <!-- Mini player (floating) -->
+  {enableMiniPlayer && (
+  <div class="vocasync-mini-player" data-mini-player hidden>
+    <button 
+      type="button" 
       class="vocasync-mini-player__play-btn"
       aria-label="Play"
       data-action="play-pause"
     >
       <svg class="vocasync-icon vocasync-icon--play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path d="M8 5v14l11-7z"/>
+        <path d="M6 4l15 8-15 8V4z"/>
       </svg>
-      <svg class="vocasync-icon vocasync-icon--pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" hidden>
-        <rect x="6" y="4" width="4" height="16"/>
-        <rect x="14" y="4" width="4" height="16"/>
+      <svg class="vocasync-icon vocasync-icon--pause vocasync-hidden" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
       </svg>
     </button>
     <div class="vocasync-mini-player__progress">
@@ -234,7 +247,8 @@ const audioDataJson = audioEntry ? JSON.stringify({
       </svg>
     </button>
   </div>
-)}
+  )}
+</div>
 
 <style>
   /* ========================================
@@ -322,6 +336,10 @@ const audioDataJson = audioEntry ? JSON.stringify({
   .vocasync-icon {
     width: 1.25rem;
     height: 1.25rem;
+  }
+  
+  .vocasync-hidden {
+    display: none !important;
   }
   
   /* Progress section */
@@ -463,6 +481,10 @@ const audioDataJson = audioEntry ? JSON.stringify({
     border-radius: 0.5rem;
     box-shadow: var(--vocasync-shadow-lg);
     z-index: 10;
+  }
+  
+  .vocasync-player__speed-menu[hidden] {
+    display: none !important;
   }
   
   .vocasync-player__speed-menu button {
@@ -681,32 +703,40 @@ const audioDataJson = audioEntry ? JSON.stringify({
     
     // Update play/pause button icon
     function updatePlayButton(playing) {
-      const playIcon = player.querySelector('.vocasync-icon--play');
-      const pauseIcon = player.querySelector('.vocasync-icon--pause');
-      if (playIcon && pauseIcon) {
-        playIcon.hidden = playing;
-        pauseIcon.hidden = !playing;
+      // Update main player play button
+      if (playBtn) {
+        const playIcon = playBtn.querySelector('.vocasync-icon--play');
+        const pauseIcon = playBtn.querySelector('.vocasync-icon--pause');
+        if (playIcon && pauseIcon) {
+          playIcon.classList.toggle('vocasync-hidden', playing);
+          pauseIcon.classList.toggle('vocasync-hidden', !playing);
+        }
         playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
       }
       
       // Update mini player too
       if (miniPlayer) {
-        const miniPlayIcon = miniPlayer.querySelector('.vocasync-icon--play');
-        const miniPauseIcon = miniPlayer.querySelector('.vocasync-icon--pause');
-        if (miniPlayIcon && miniPauseIcon) {
-          miniPlayIcon.hidden = playing;
-          miniPauseIcon.hidden = !playing;
+        const miniPlayBtn = miniPlayer.querySelector('[data-action="play-pause"]');
+        if (miniPlayBtn) {
+          const miniPlayIcon = miniPlayBtn.querySelector('.vocasync-icon--play');
+          const miniPauseIcon = miniPlayBtn.querySelector('.vocasync-icon--pause');
+          if (miniPlayIcon && miniPauseIcon) {
+            miniPlayIcon.classList.toggle('vocasync-hidden', playing);
+            miniPauseIcon.classList.toggle('vocasync-hidden', !playing);
+          }
         }
       }
     }
     
     // Update volume icon
     function updateVolumeIcon(muted) {
-      const highIcon = player.querySelector('.vocasync-icon--volume-high');
-      const muteIcon = player.querySelector('.vocasync-icon--volume-mute');
-      if (highIcon && muteIcon) {
-        highIcon.hidden = muted;
-        muteIcon.hidden = !muted;
+      if (muteBtn) {
+        const highIcon = muteBtn.querySelector('.vocasync-icon--volume-high');
+        const muteIcon = muteBtn.querySelector('.vocasync-icon--volume-mute');
+        if (highIcon && muteIcon) {
+          highIcon.classList.toggle('vocasync-hidden', muted);
+          muteIcon.classList.toggle('vocasync-hidden', !muted);
+        }
       }
     }
     
@@ -716,8 +746,8 @@ const audioDataJson = audioEntry ? JSON.stringify({
       const onIcon = highlightBtn.querySelector('.vocasync-icon--highlight-on');
       const offIcon = highlightBtn.querySelector('.vocasync-icon--highlight-off');
       if (onIcon && offIcon) {
-        onIcon.hidden = !highlightingEnabled;
-        offIcon.hidden = highlightingEnabled;
+        onIcon.classList.toggle('vocasync-hidden', !highlightingEnabled);
+        offIcon.classList.toggle('vocasync-hidden', highlightingEnabled);
       }
       highlightBtn.setAttribute('data-highlighting', highlightingEnabled ? 'on' : 'off');
       highlightBtn.setAttribute('aria-label', highlightingEnabled ? 'Disable word highlighting' : 'Enable word highlighting');
