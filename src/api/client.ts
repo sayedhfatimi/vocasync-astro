@@ -99,6 +99,21 @@ export class VocaSyncClient {
   }
 
   /**
+   * Create a publishable key for a project.
+   * The publishable key enables public access to project artifacts via stream endpoints.
+   * 
+   * @param projectUuid - The project UUID
+   * @returns The publishable key (only returned once at creation)
+   */
+  async createPublishableKey(projectUuid: string): Promise<{ publishableKey: string }> {
+    const response = await this.request<{ publishableKey: string; projectUuid: string }>(
+      "POST",
+      `/projects/${projectUuid}/publishable-key`
+    );
+    return { publishableKey: response.publishableKey };
+  }
+
+  /**
    * Get project status including synthesis and alignment job status.
    */
   async getProjectStatus(projectUuid: string): Promise<ProjectStatus> {

@@ -22,6 +22,7 @@ interface AudioEntry {
   alignmentUrl?: string;
   words?: AlignedWord[];
   duration?: number;
+  publishableKey?: string;
 }
 
 interface Props {
@@ -41,6 +42,8 @@ interface Props {
   enableMiniPlayer?: boolean;
   /** Enable word highlighting during playback */
   enableHighlighting?: boolean;
+  /** Enable click on words to seek to that position */
+  enableClickToSeek?: boolean;
   /** Number of trailing highlighted words */
   trailLength?: number;
 }
@@ -54,6 +57,7 @@ const {
   articleSelector = "[data-article-body]",
   enableMiniPlayer = true,
   enableHighlighting = true,
+  enableClickToSeek = true,
   trailLength = 4,
 } = Astro.props;
 
@@ -66,6 +70,7 @@ const audioDataJson = audioEntry ? JSON.stringify({
   audioUrl: audioEntry.audioUrl,
   words: audioEntry.words || [],
   duration: audioEntry.duration,
+  publishableKey: audioEntry.publishableKey,
 }) : null;
 ---
 
@@ -77,6 +82,7 @@ const audioDataJson = audioEntry ? JSON.stringify({
   data-article-selector={articleSelector}
   data-enable-mini={enableMiniPlayer}
   data-enable-highlighting={enableHighlighting}
+  data-enable-click-to-seek={enableClickToSeek}
   data-trail-length={trailLength}
   aria-label={label}
   tabindex="0"
@@ -754,9 +760,10 @@ const audioDataJson = audioEntry ? JSON.stringify({
     }
     
     // Word highlighting state (populated from DOM)
+    const EPS = 0.0001; // Epsilon for floating-point comparisons
     let wordEls = [];
-    let starts = [];
-    let ends = [];
+    let starts = new Float64Array(0);
+    let ends = new Float64Array(0);
     let activeIndex = -1;
     
     // Initialize word highlighting from DOM elements
@@ -767,37 +774,43 @@ const audioDataJson = audioEntry ? JSON.stringify({
       wordEls = Array.from(article.querySelectorAll('.vocasync-word[data-start][data-end]'));
       if (!wordEls.length) return false;
       
-      starts = [];
-      ends = [];
-      for (let i = 0; i < wordEls.length; i++) {
+      const n = wordEls.length;
+      starts = new Float64Array(n);
+      ends = new Float64Array(n);
+      for (let i = 0; i < n; i++) {
         starts[i] = Number(wordEls[i].dataset.start || '0');
         ends[i] = Number(wordEls[i].dataset.end || '0');
-        if (!(ends[i] >= starts[i])) ends[i] = starts[i] + 0.0001;
+        if (!(ends[i] >= starts[i])) ends[i] = starts[i] + EPS;
       }
       return true;
     }
     
     // Binary search: find index of word for current time
     function idxForTime(t) {
-      if (!wordEls.length) return -1;
-      let lo = 0, hi = wordEls.length - 1, ans = -1;
+      const n = wordEls.length;
+      if (!n) return -1;
+      let lo = 0, hi = n - 1, ans = 0;
       while (lo <= hi) {
         const mid = (lo + hi) >> 1;
         if (starts[mid] <= t) { ans = mid; lo = mid + 1; } else { hi = mid - 1; }
       }
-      if (ans >= 0 && t >= ends[ans] && ans + 1 < wordEls.length) ans++;
-      // Only return if we're actually within the word's time range
-      if (ans >= 0 && t >= starts[ans] && t < ends[ans]) return ans;
+      if (ans >= 0 && t >= ends[ans] && ans + 1 < n) ans++;
+      // Ensure strict containment by adjusting neighbor-wise
+      if (t < starts[ans] - EPS && ans > 0) {
+        while (ans > 0 && t < starts[ans] - EPS) ans--;
+      } else if (t >= ends[ans] + EPS && ans < n - 1) {
+        while (ans < n - 1 && t >= ends[ans] + EPS) ans++;
+      }
       return ans;
     }
     
     // Clear all highlights
     function clearHighlights() {
       if (activeIndex >= 0 && activeIndex < wordEls.length) {
-        wordEls[activeIndex].removeAttribute('data-active');
+        wordEls[activeIndex].classList.remove('is-active');
         for (let j = 1; j <= trailLength; j++) {
           const k = activeIndex - j;
-          if (k >= 0) wordEls[k].removeAttribute('data-trail');
+          if (k >= 0) wordEls[k].classList.remove('is-trail');
         }
       }
       activeIndex = -1;
@@ -807,18 +820,18 @@ const audioDataJson = audioEntry ? JSON.stringify({
     function markActive(i) {
       if (i === activeIndex) return;
       if (activeIndex >= 0 && activeIndex < wordEls.length) {
-        wordEls[activeIndex].removeAttribute('data-active');
+        wordEls[activeIndex].classList.remove('is-active');
         for (let j = 1; j <= trailLength; j++) {
           const k = activeIndex - j;
-          if (k >= 0) wordEls[k].removeAttribute('data-trail');
+          if (k >= 0) wordEls[k].classList.remove('is-trail');
         }
       }
       activeIndex = i;
       if (highlightingEnabled && i >= 0 && i < wordEls.length) {
-        wordEls[i].setAttribute('data-active', 'true');
+        wordEls[i].classList.add('is-active');
         for (let j = 1; j <= trailLength; j++) {
           const k = i - j;
-          if (k >= 0) wordEls[k].setAttribute('data-trail', String(j));
+          if (k >= 0) wordEls[k].classList.add('is-trail');
         }
       }
     }
@@ -826,29 +839,51 @@ const audioDataJson = audioEntry ? JSON.stringify({
     // Update word highlighting based on current time
     function updateHighlighting() {
       if (!wordEls.length) return;
-      const t = audio.currentTime;
-      const i = idxForTime(t);
+      const t = Number(audio.currentTime || 0);
+      if (!Number.isFinite(t)) return;
+      const i = idxForTime(t + EPS);
       if (i !== activeIndex) {
         markActive(i);
       }
     }
     
     // Animation loop for highlighting
-    function startHighlightLoop() {
-      function loop() {
-        if (isPlaying) {
-          updateHighlighting();
-          animationFrame = requestAnimationFrame(loop);
-        }
+    function highlightTick() {
+      if (!highlightingEnabled) return;
+      const t = Number(audio.currentTime || 0);
+      if (!Number.isFinite(t)) {
+        animationFrame = requestAnimationFrame(highlightTick);
+        return;
       }
-      animationFrame = requestAnimationFrame(loop);
+      const i = idxForTime(t + EPS);
+      markActive(i);
+      if (!audio.paused && !audio.ended) {
+        animationFrame = requestAnimationFrame(highlightTick);
+      }
+    }
+    
+    function startHighlightLoop() {
+      cancelAnimationFrame(animationFrame); // Always cancel first to prevent stacking
+      animationFrame = requestAnimationFrame(highlightTick);
     }
     
     function stopHighlightLoop() {
-      if (animationFrame) {
-        cancelAnimationFrame(animationFrame);
-        animationFrame = null;
-      }
+      cancelAnimationFrame(animationFrame);
+      animationFrame = null;
+    }
+    
+    // Handle seeking - update highlight immediately
+    function onSeeking() {
+      if (!highlightingEnabled || !wordEls.length) return;
+      const i = idxForTime(Number(audio.currentTime || 0) + EPS);
+      if (i >= 0) markActive(i);
+    }
+    
+    function onSeeked() {
+      if (!highlightingEnabled || !wordEls.length) return;
+      const i = idxForTime(Number(audio.currentTime || 0) + EPS);
+      if (i >= 0) markActive(i);
+      if (!audio.paused && !audio.ended) startHighlightLoop();
     }
     
     // Toggle highlighting on/off
@@ -915,6 +950,9 @@ const audioDataJson = audioEntry ? JSON.stringify({
     
     // Setup click handlers for pre-wrapped words (from rehype plugin)
     function setupWordClickHandlers() {
+      const enableClickToSeek = player.dataset.enableClickToSeek === 'true';
+      if (!enableClickToSeek) return;
+      
       const article = document.querySelector(articleSelector);
       if (!article) return;
       
@@ -955,8 +993,14 @@ const audioDataJson = audioEntry ? JSON.stringify({
           return;
         }
         
-        // Set audio source
-        audio.src = entry.audioUrl;
+        // Set audio source (append publishable key if provided)
+        let audioSrc = entry.audioUrl;
+        if (entry.publishableKey) {
+          const url = new URL(entry.audioUrl);
+          url.searchParams.set('pk', entry.publishableKey);
+          audioSrc = url.toString();
+        }
+        audio.src = audioSrc;
         
         // Initialize word highlighting from DOM spans (from rehype plugin)
         // Defer to DOMContentLoaded since the content div comes after the player in the HTML
@@ -1036,6 +1080,10 @@ const audioDataJson = audioEntry ? JSON.stringify({
       updatePlayButton(false);
       stopHighlightLoop();
     });
+    
+    // Handle seeking for smooth highlight updates
+    audio.addEventListener('seeking', onSeeking);
+    audio.addEventListener('seeked', onSeeked);
     
     audio.addEventListener('loadedmetadata', () => {
       durationTimeEl.textContent = formatTime(audio.duration);

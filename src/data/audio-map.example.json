@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "updatedAt": "2024-01-01T00:00:00.000Z",
   "entries": {
     "example-post": {
@@ -8,10 +8,7 @@
       "duration": 125.5,
       "audioUrl": "https://vocasync.io/api/v1/stream/550e8400-e29b-41d4-a716-446655440000/audio.mp3",
       "alignmentUrl": "https://vocasync.io/api/v1/stream/550e8400-e29b-41d4-a716-446655440000/alignment.json",
-      "words": [
-        { "word": "Hello", "start": 0.0, "end": 0.35 },
-        { "word": "world", "start": 0.35, "end": 0.75 }
-      ],
+      "publishableKey": "pk_live_xxxxxxxxxxxxxxxxxxxx",
       "createdAt": "2024-01-01T00:00:00.000Z",
       "updatedAt": "2024-01-01T00:00:00.000Z"
     }

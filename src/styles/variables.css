@@ -130,7 +130,7 @@
   margin: 0 -0.0625rem;
 }
 
-.vocasync-word[data-active="true"] {
+.vocasync-word.is-active {
   background-color: color-mix(
     in oklch,
     var(--vocasync-highlight) calc(var(--vocasync-highlight-active-opacity) * 100%),
@@ -138,28 +138,11 @@
   );
 }
 
-/* Trail effect for previous words */
-.vocasync-word[data-trail="1"] {
+/* Trail effect for previous words - fading gradient */
+.vocasync-word.is-trail {
   background-color: color-mix(
     in oklch,
     var(--vocasync-highlight) calc(var(--vocasync-highlight-trail-opacity) * 100%),
-    transparent
-  );
-}
-
-.vocasync-word[data-trail="2"] {
-  background-color: color-mix(
-    in oklch,
-    var(--vocasync-highlight) calc(var(--vocasync-highlight-trail-opacity) * 50%),
-    transparent
-  );
-}
-
-.vocasync-word[data-trail="3"],
-.vocasync-word[data-trail="4"] {
-  background-color: color-mix(
-    in oklch,
-    var(--vocasync-highlight) calc(var(--vocasync-highlight-trail-opacity) * 25%),
     transparent
   );
 }

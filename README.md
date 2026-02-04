@@ -265,6 +265,7 @@ import { AudioPlayer } from "@vocasync/astro/components";
   label="Listen to this post"
   articleSelector="[data-article-body]"
   enableHighlighting={true}
+  enableClickToSeek={true}
   enableMiniPlayer={true}
   trailLength={4}
 />
@@ -281,6 +282,7 @@ import { AudioPlayer } from "@vocasync/astro/components";
 | `articleSelector` | `string` | `"[data-article-body]"` | Selector for word highlighting container |
 | `enableMiniPlayer` | `boolean` | `true` | Show floating mini player on scroll |
 | `enableHighlighting` | `boolean` | `true` | Enable word highlighting |
+| `enableClickToSeek` | `boolean` | `true` | Enable click on words to seek audio |
 | `trailLength` | `number` | `4` | Number of trailing highlighted words |
 
 #### Keyboard Shortcuts
@@ -298,6 +300,14 @@ When the player is focused (click on it or Tab to it), the following keyboard sh
 #### Highlighting Toggle
 
 The player includes a highlighter icon button that allows users to toggle word highlighting on/off during playback. This is useful for users who find the highlighting distracting or prefer to just listen.
+
+#### Click-to-Seek
+
+When `enableClickToSeek` is enabled (default), clicking on any word in the article will:
+1. Seek the audio to that word's timestamp
+2. Start playback if paused
+
+This is useful for jumping to specific parts of an article. Disable it with `enableClickToSeek={false}` if you prefer words to not be interactive.
 
 ### Word Highlighting
 
@@ -489,7 +499,15 @@ The `audio-map.json` file is the **source of truth** for VocaSync. It stores:
 - Project UUIDs for each synced article
 - Content hashes (to detect changes)
 - Audio and alignment URLs
+- Publishable keys (for authenticated streaming access)
 - Timestamps
+
+### Audio Map Versions
+
+- **Version 1** (legacy): Does not include publishable keys
+- **Version 2** (current): Includes `publishableKey` field for each entry
+
+If you have an existing v1 audio map, running `npx vocasync sync` will automatically migrate entries by creating publishable keys without re-synthesizing audio.
 
 ### ⚠️ Do Not Delete
 

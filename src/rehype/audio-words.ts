@@ -58,18 +58,29 @@ function loadAudioMapSync(audioMapPath: string): AudioMap | null {
 /**
  * Fetch alignment data from URL (synchronously using a worker thread approach).
  * Since rehype plugins must be synchronous, we use a sync HTTP request.
+ * @param alignmentUrl - The base alignment URL
+ * @param slug - The content slug for caching
+ * @param publishableKey - Optional publishable key for authentication
  */
-function fetchAlignmentSync(alignmentUrl: string, slug: string): AlignedWord[] | null {
+function fetchAlignmentSync(alignmentUrl: string, slug: string, publishableKey?: string): AlignedWord[] | null {
   // Check cache first
   if (alignmentCache.has(slug)) {
     return alignmentCache.get(slug) ?? null;
   }
 
   try {
+    // Build the URL with publishable key if provided
+    let fetchUrl = alignmentUrl;
+    if (publishableKey) {
+      const url = new URL(alignmentUrl);
+      url.searchParams.set("pk", publishableKey);
+      fetchUrl = url.toString();
+    }
+
     // Use sync-fetch or execSync to make a synchronous HTTP request
     // We'll use child_process.execSync with curl as a simple solution
     // Note: -L flag follows redirects (required for vocasync.io signed URLs)
-    const result = execSync(`curl -sL "${alignmentUrl}"`, {
+    const result = execSync(`curl -sL "${fetchUrl}"`, {
       encoding: "utf-8",
       timeout: 30000,
     });
@@ -164,8 +175,8 @@ const rehypeAudioWords: Plugin<[RehypeAudioWordsOptions?], Root> = (options = {}
       return; // No alignment URL, skip
     }
 
-    // Fetch alignment words from URL
-    const words = fetchAlignmentSync(entry.alignmentUrl, slug);
+    // Fetch alignment words from URL with publishable key
+    const words = fetchAlignmentSync(entry.alignmentUrl, slug, entry.publishableKey);
 
     if (!words || words.length === 0) {
       return; // No alignment data, skip

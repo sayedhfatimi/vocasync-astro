@@ -127,9 +127,41 @@ async function processItem(
     const existingEntry = getAudioEntry(audioMap, item.slug);
     const contentChanged = hasChanged(existingEntry?.contentHash, speechDoc.hash);
 
-    if (!force && !contentChanged && existingEntry) {
+    // Check if existing entry is missing publishable key (migration from v1)
+    const needsPublishableKey = existingEntry && !existingEntry.publishableKey;
+
+    if (!force && !contentChanged && existingEntry && !needsPublishableKey) {
       onProgress(`⏭ ${item.slug} - unchanged`, "info");
       return { slug: item.slug, status: "unchanged" };
+    }
+
+    // If only missing publishable key, create it without re-synthesizing
+    if (!force && !contentChanged && existingEntry && needsPublishableKey) {
+      onProgress(`🔑 ${item.slug} - creating missing publishable key...`, "info");
+
+      if (dryRun) {
+        onProgress(`🔍 ${item.slug} - would create publishable key (dry run)`, "info");
+        return { slug: item.slug, status: "unchanged" };
+      }
+
+      try {
+        const { publishableKey } = await client.createPublishableKey(existingEntry.projectUuid);
+
+        // Update existing entry with publishable key
+        const updatedArtifact: AudioArtifact = {
+          ...existingEntry,
+          publishableKey,
+          updatedAt: new Date().toISOString(),
+        };
+        setAudioEntry(audioMap, item.slug, updatedArtifact);
+
+        onProgress(`✅ ${item.slug} - publishable key added`, "success");
+        return { slug: item.slug, status: "updated", projectUuid: existingEntry.projectUuid };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        onProgress(`❌ ${item.slug} - failed to create publishable key: ${message}`, "error");
+        return { slug: item.slug, status: "error", error: message };
+      }
     }
 
     const status: SyncStatus = existingEntry ? "updated" : "new";
@@ -167,16 +199,21 @@ async function processItem(
 
     const alignmentData = await client.getAlignment(finalStatus.alignmentJob.alignmentUrl);
 
+    // Create publishable key for public streaming access
+    onProgress(`🔑 ${item.slug} - creating publishable key...`, "info");
+    const { publishableKey } = await client.createPublishableKey(response.projectUuid);
+
     // Get stable streaming URLs
     const streamingUrls = getStreamingUrls(response.projectUuid);
 
-    // Create audio artifact (alignment data fetched at build time from alignmentUrl)
+    // Create audio artifact with publishable key
     const artifact: AudioArtifact = {
       projectUuid: response.projectUuid,
       contentHash: speechDoc.hash,
       duration: alignmentData.duration,
       audioUrl: streamingUrls.synthesisUrl,
       alignmentUrl: streamingUrls.alignmentUrl,
+      publishableKey,
       createdAt: existingEntry?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

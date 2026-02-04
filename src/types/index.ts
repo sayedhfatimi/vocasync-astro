@@ -52,6 +52,8 @@ export interface AudioArtifact {
   audioUrl: string;
   /** URL to fetch alignment JSON (stable, non-expiring) */
   alignmentUrl: string;
+  /** Publishable key for streaming endpoint authentication */
+  publishableKey?: string;
   /** When this artifact was created */
   createdAt: string;
   /** When this artifact was last updated */
@@ -63,7 +65,7 @@ export interface AudioArtifact {
  */
 export interface AudioMap {
   /** Version of the audio-map schema */
-  version: 1;
+  version: 1 | 2;
   /** When the map was last updated */
   updatedAt: string;
   /** Map of slug -> audio artifact */
@@ -89,6 +91,16 @@ export interface SynthesisRequest {
 export interface SynthesisResponse {
   projectUuid: string;
   estimatedCost: number;
+}
+
+/**
+ * VocaSync API publishable key response
+ */
+export interface PublishableKeyResponse {
+  publishableKey: string;
+  projectUuid: string;
+  prefix: string;
+  createdAt: string;
 }
 
 /**
