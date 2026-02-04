@@ -1,6 +1,6 @@
 {
   "name": "@vocasync/astro",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "VocaSync integration for Astro - Text-to-speech synthesis and word-level alignment for static sites",
   "type": "module",
   "types": "./dist/index.d.ts",
