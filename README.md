@@ -8,7 +8,7 @@ Turn your Astro blog posts into narrated audio with word-level synchronization.
 - 🎯 **Word-Level Alignment** - Precise timestamps for every word, powered by forced alignment
 - ✨ **Live Word Highlighting** - Karaoke-style highlighting that follows along with playback
 - 🎛️ **Built-in Audio Player** - Accessible player with keyboard shortcuts and mini-player mode
-- 🌍 **57 Languages** - Global reach with support for 57 languages
+- 🌍 **14 Languages** - Global reach with support for 14 languages
 - 🎨 **Fully Themeable** - CSS variables for seamless integration with any design
 
 ## Demo
@@ -323,32 +323,19 @@ The rehype plugin wraps each word in a `<span>` with timing data at build time.
 
 ## Supported Languages
 
-VocaSync supports 57 languages using ISO 639-1 codes:
+VocaSync supports 14 languages where both speech synthesis and forced alignment are available. Languages use ISO 639-1 codes:
 
-| Code | Language | Code | Language | Code | Language |
-|------|----------|------|----------|------|----------|
-| `af` | Afrikaans | `hu` | Hungarian | `pl` | Polish |
-| `ar` | Arabic | `is` | Icelandic | `pt` | Portuguese |
-| `hy` | Armenian | `id` | Indonesian | `ro` | Romanian |
-| `az` | Azerbaijani | `it` | Italian | `ru` | Russian |
-| `be` | Belarusian | `ja` | Japanese | `sr` | Serbian |
-| `bs` | Bosnian | `kn` | Kannada | `sk` | Slovak |
-| `bg` | Bulgarian | `kk` | Kazakh | `sl` | Slovenian |
-| `ca` | Catalan | `ko` | Korean | `es` | Spanish |
-| `zh` | Chinese | `lv` | Latvian | `sw` | Swahili |
-| `hr` | Croatian | `lt` | Lithuanian | `sv` | Swedish |
-| `cs` | Czech | `mk` | Macedonian | `tl` | Tagalog |
-| `da` | Danish | `ms` | Malay | `ta` | Tamil |
-| `nl` | Dutch | `mr` | Marathi | `th` | Thai |
-| `en` | English | `mi` | Māori | `tr` | Turkish |
-| `et` | Estonian | `ne` | Nepali | `uk` | Ukrainian |
-| `fi` | Finnish | `no` | Norwegian | `ur` | Urdu |
-| `fr` | French | `fa` | Persian | `vi` | Vietnamese |
-| `gl` | Galician | | | `cy` | Welsh |
-| `de` | German | | | | |
-| `el` | Greek | | | | |
-| `he` | Hebrew | | | | |
-| `hi` | Hindi | | | | |
+| Code | Language | Code | Language |
+|------|----------|------|----------|
+| `zh` | Chinese | `pl` | Polish |
+| `cs` | Czech | `pt` | Portuguese |
+| `en` | English | `ru` | Russian |
+| `fr` | French | `es` | Spanish |
+| `de` | German | `sv` | Swedish |
+| `ja` | Japanese | `tr` | Turkish |
+| `ko` | Korean | `uk` | Ukrainian |
+
+> **Note:** VocaSync requires both speech synthesis and word-level forced alignment for each language. While synthesis (powered by OpenAI TTS) supports 57 languages, alignment (powered by Montreal Forced Aligner) is available for a smaller set. The 14 languages listed above are where both capabilities overlap.
 
 ## Math Support
 

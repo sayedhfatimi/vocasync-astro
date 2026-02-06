@@ -19,16 +19,25 @@ export const FormatSchema = z.enum(["mp3", "opus", "aac", "flac"]);
 export type Format = z.infer<typeof FormatSchema>;
 
 /**
- * Supported languages for synthesis
+ * Supported languages for synthesis + alignment
  * Uses short ISO 639-1 codes as expected by the VocaSync API
+ * Only languages where both OpenAI TTS synthesis and MFA forced alignment are available
  */
 export const LanguageSchema = z.enum([
-  "af", "ar", "hy", "az", "be", "bs", "bg", "ca", "zh", "hr",
-  "cs", "da", "nl", "en", "et", "fi", "fr", "gl", "de", "el",
-  "he", "hi", "hu", "is", "id", "it", "ja", "kn", "kk", "ko",
-  "lv", "lt", "mk", "ms", "mr", "mi", "ne", "no", "fa", "pl",
-  "pt", "ro", "ru", "sr", "sk", "sl", "es", "sw", "sv", "tl",
-  "ta", "th", "tr", "uk", "ur", "vi", "cy"
+  "zh",
+  "cs",
+  "en",
+  "fr",
+  "de",
+  "ja",
+  "ko",
+  "pl",
+  "pt",
+  "ru",
+  "es",
+  "sv",
+  "tr",
+  "uk",
 ]);
 export type Language = z.infer<typeof LanguageSchema>;
 
