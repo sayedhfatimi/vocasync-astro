@@ -7,6 +7,14 @@
 export interface AudioPlayerProps {
   /** Post slug to lookup audio in audio-map */
   slug: string;
+  /** Audio entry data from audio-map.json */
+  audioEntry?: {
+    audioUrl: string;
+    alignmentUrl?: string;
+    words?: { word: string; start: number; end: number }[];
+    duration?: number;
+    publishableKey?: string;
+  };
   /** Accessible label for the player */
   label?: string;
   /** Show placeholder when no audio available */
@@ -19,6 +27,8 @@ export interface AudioPlayerProps {
   enableMiniPlayer?: boolean;
   /** Enable word highlighting during playback */
   enableHighlighting?: boolean;
+  /** Enable click on words to seek to that position */
+  enableClickToSeek?: boolean;
   /** Number of trailing highlighted words */
   trailLength?: number;
 }

@@ -115,14 +115,16 @@ In your article layout or page:
 ```astro
 ---
 // src/layouts/ArticleLayout.astro
-import { AudioPlayer } from "@vocasync/astro/components";
+import AudioPlayer from "@vocasync/astro/components/AudioPlayer.astro";
+import audioMap from "../data/audio-map.json";
 
 const { post } = Astro.props;
+const audioEntry = audioMap.entries[post.slug];
 ---
 
 <article>
   <!-- Audio player at the top -->
-  <AudioPlayer slug={post.slug} label="Listen to this post" />
+  <AudioPlayer slug={post.slug} audioEntry={audioEntry} label="Listen to this post" />
   
   <!-- Article content - must have data-article-body for word highlighting -->
   <div data-article-body>
@@ -257,7 +259,7 @@ The main audio player component with word highlighting support.
 
 ```astro
 ---
-import { AudioPlayer } from "@vocasync/astro/components";
+import AudioPlayer from "@vocasync/astro/components/AudioPlayer.astro";
 ---
 
 <AudioPlayer
@@ -276,7 +278,8 @@ import { AudioPlayer } from "@vocasync/astro/components";
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `slug` | `string` | required | Post slug to lookup audio |
-| `label` | `string` | `"Listen to this post"` | Accessible label |
+| `audioEntry` | `object` | `undefined` | Audio entry from audio-map.json (audioUrl, publishableKey, etc.) |
+| `label` | `string` | `"Listen to this article"` | Accessible label |
 | `showPlaceholder` | `boolean` | `true` | Show message when no audio |
 | `class` | `string` | `""` | Additional CSS classes |
 | `articleSelector` | `string` | `"[data-article-body]"` | Selector for word highlighting container |
@@ -343,10 +346,10 @@ VocaSync supports LaTeX math equations using [Speech Rule Engine](https://github
 
 ### Installation
 
-Install the optional dependency:
+Install the optional peer dependencies:
 
 ```bash
-npm install latex-to-speech
+npm install speech-rule-engine mathjax-full
 ```
 
 ### Setup
