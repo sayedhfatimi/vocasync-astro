@@ -3,6 +3,7 @@ import remarkMath from "remark-math";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import type { MathConfig } from "../config/index.js";
+import { speakLatex } from "../lib/latex-to-speech/speak.js";
 import type { ContentItem, SpeechDocument } from "../types/index.js";
 import { computeHash } from "./hash-manager.js";
 
@@ -13,81 +14,19 @@ interface LaTeXConverter {
   convert(latex: string, display: boolean): Promise<string>;
 }
 
-// Cache for latex-to-speech results
-const latexSpeechCache = new Map<string, Promise<string>>();
-let latexToSpeech:
-  | ((exprs: string[], options?: Record<string, unknown>) => Promise<string[]>)
-  | null = null;
-let latexToSpeechLoadAttempted = false;
-let warnedLatexSpeechFailure = false;
-
 /**
- * Normalize whitespace in text.
+ * Create a LaTeX converter that delegates to the shared speakLatex module.
  */
-function normalizeWhitespace(value = ""): string {
-  return value.replace(/\r/g, "").replace(/\s+/g, " ").trim();
-}
-
-/**
- * Create a lazy-loaded LaTeX converter using our internal latex-to-speech module.
- * This uses speech-rule-engine and mathjax-full as optional peer dependencies.
- */
-async function createLatexConverter(config: MathConfig): Promise<LaTeXConverter | null> {
+function createLatexConverter(config: MathConfig): LaTeXConverter | null {
   if (!config.enabled) {
     return null;
   }
 
-  // Lazy load our internal latex-to-speech module
-  if (!latexToSpeechLoadAttempted) {
-    latexToSpeechLoadAttempted = true;
-    try {
-      const mod = await import("../lib/latex-to-speech/index.js");
-      latexToSpeech = mod.latexToSpeech || mod.default;
-    } catch {
-      console.warn(
-        "[vocasync] Math-to-speech initialization failed. Install optional dependencies:",
-        "\n  npm install speech-rule-engine mathjax-full"
-      );
-    }
-  }
-
-  if (!latexToSpeech) {
-    return null;
-  }
-
-  const options = {
-    domain: config.style || "clearspeak",
-    style: "default",
-    locale: "en",
-    modality: "speech",
-  };
+  const style = config.style || "clearspeak";
 
   return {
-    async convert(latex: string, display: boolean): Promise<string> {
-      const trimmed = latex.trim();
-      if (!trimmed) return "";
-
-      const cacheKey = `${display}:${trimmed}`;
-      if (!latexSpeechCache.has(cacheKey)) {
-        const pending = (async () => {
-          try {
-            const result = await latexToSpeech!([trimmed], options);
-            const spoken = Array.isArray(result) ? result[0] : String(result ?? "");
-            return normalizeWhitespace(spoken);
-          } catch (error) {
-            if (!warnedLatexSpeechFailure) {
-              console.warn(
-                "[vocasync] Failed to convert LaTeX to speech:",
-                error instanceof Error ? error.message : error
-              );
-              warnedLatexSpeechFailure = true;
-            }
-            return normalizeWhitespace(trimmed);
-          }
-        })();
-        latexSpeechCache.set(cacheKey, pending);
-      }
-      return latexSpeechCache.get(cacheKey)!;
+    convert(latex: string, display: boolean): Promise<string> {
+      return speakLatex(latex, display, style);
     },
   };
 }
@@ -112,7 +51,7 @@ export async function buildSpeechDocument(
   options: BuildOptions = {}
 ): Promise<SpeechDocument> {
   const mathConfig = options.math ?? { enabled: false, style: "clearspeak" };
-  const latexConverter = await createLatexConverter(mathConfig);
+  const latexConverter = createLatexConverter(mathConfig);
 
   // Parse markdown with math support
   const processor = unified().use(remarkParse).use(remarkMath);

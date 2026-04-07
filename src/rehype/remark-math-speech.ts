@@ -8,8 +8,9 @@ export type MathSpeechEntry = {
 };
 
 /**
- * Remark plugin that collects all math expressions from markdown.
- * Must run BEFORE remark-math.
+ * Remark transformer that collects all math expressions from markdown.
+ * Requires remark-math to be registered (order does not matter —
+ * remark-math operates at parse time via micromark syntax extensions).
  * Stores entries in file.data.mathSpeech for rehypeMathSpeech to consume.
  */
 export default function remarkMathSpeechCollector() {

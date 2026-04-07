@@ -7,8 +7,8 @@
 
 // biome-ignore lint/suspicious/noExplicitAny: speech-rule-engine is an optional peer dep with no bundled types
 let SRE: any = null;
-let tex2mml: ((latex: string) => string) | null = null;
-let engineSetup = false;
+let tex2mml: ((latex: string, display: boolean) => string) | null = null;
+let lastEngineKey = "";
 let initPromise: Promise<boolean> | null = null;
 
 /**
@@ -55,9 +55,9 @@ async function init(): Promise<boolean> {
       // Create a visitor to serialize to MathML
       const visitor = new SerializedMmlVisitor();
 
-      // Create the tex2mml function
-      tex2mml = (latex: string): string => {
-        const node = doc.convert(latex, { display: true });
+      // Create the tex2mml function — display flag controls MathML output
+      tex2mml = (latex: string, display: boolean): string => {
+        const node = doc.convert(latex, { display });
         return visitor.visitTree(node);
       };
 
@@ -84,13 +84,24 @@ export interface SREOptions {
 }
 
 /**
+ * A single LaTeX expression with its display context.
+ */
+export interface LaTeXExpression {
+  latex: string;
+  display: boolean;
+}
+
+/**
  * Convert an array of LaTeX expressions to speech.
  *
- * @param exprs - Array of LaTeX expressions to convert
+ * @param exprs - Array of LaTeX expressions (with display flag) to convert
  * @param options - SRE configuration options
  * @returns Promise resolving to array of speech strings
  */
-export async function latexToSpeech(exprs: string[], options: SREOptions = {}): Promise<string[]> {
+export async function latexToSpeech(
+  exprs: LaTeXExpression[],
+  options: SREOptions = {}
+): Promise<string[]> {
   const available = await init();
 
   if (!available || !SRE || !tex2mml) {
@@ -98,23 +109,23 @@ export async function latexToSpeech(exprs: string[], options: SREOptions = {}): 
     return exprs.map(() => "");
   }
 
-  // Set up the engine if not already done
-  if (!engineSetup) {
+  // Reconfigure the engine when options change
+  const engineKey = `${options.locale || "en"}:${options.domain || "mathspeak"}:${options.style || "default"}`;
+  if (engineKey !== lastEngineKey) {
     await SRE.setupEngine({
       locale: options.locale || "en",
       domain: options.domain || "mathspeak",
       style: options.style || "default",
       modality: options.modality || "speech",
       speech: options.speech || "deep",
-      ...options,
     });
-    engineSetup = true;
+    lastEngineKey = engineKey;
   }
 
   // Convert each expression
-  return exprs.map((latex) => {
+  return exprs.map(({ latex, display }) => {
     try {
-      const mml = tex2mml!(latex);
+      const mml = tex2mml!(latex, display);
       return SRE!.toSpeech(mml);
     } catch {
       console.warn(`[vocasync] Failed to convert LaTeX to speech: ${latex}`);

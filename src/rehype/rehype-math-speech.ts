@@ -1,17 +1,10 @@
 import type { Element, Parent, Root } from "hast";
 import { visitParents } from "unist-util-visit-parents";
 import type { VFile } from "vfile";
+import { speakLatex } from "../lib/latex-to-speech/speak.js";
 import type { MathSpeechEntry } from "./remark-math-speech.js";
 
 const SR_SPEECH_CLASS = "vocasync-math-speech";
-
-let latexToSpeech:
-  | ((exprs: string[], options?: Record<string, unknown>) => Promise<string[]>)
-  | null = null;
-let latexToSpeechLoadAttempted = false;
-
-const latexSpeechCache = new Map<string, Promise<string>>();
-let warnedLatexSpeechFailure = false;
 
 interface RehypeMathSpeechOptions {
   /**
@@ -19,63 +12,6 @@ interface RehypeMathSpeechOptions {
    * @default "clearspeak"
    */
   style?: "clearspeak" | "mathspeak";
-}
-
-/**
- * Convert LaTeX to spoken text using speech-rule-engine and mathjax-full.
- */
-async function speakLatex(value: string, style = "clearspeak"): Promise<string> {
-  const trimmed = String(value ?? "").trim();
-  if (!trimmed) return "";
-
-  // Lazy load our internal latex-to-speech module
-  if (!latexToSpeechLoadAttempted) {
-    latexToSpeechLoadAttempted = true;
-    try {
-      const mod = await import("../lib/latex-to-speech/index.js");
-      latexToSpeech = mod.latexToSpeech || mod.default;
-    } catch {
-      console.warn(
-        "[vocasync] Math-to-speech initialization failed. Install optional dependencies:",
-        "\n  npm install speech-rule-engine mathjax-full"
-      );
-    }
-  }
-
-  if (!latexToSpeech) {
-    return trimmed; // Fallback to raw latex if library not available
-  }
-
-  const cacheKey = `${style}:${trimmed}`;
-  if (!latexSpeechCache.has(cacheKey)) {
-    const pending = (async () => {
-      try {
-        const result = await latexToSpeech!([trimmed], {
-          domain: style,
-          style: "default",
-          locale: "en",
-          modality: "speech",
-        });
-        const spoken = Array.isArray(result) ? result[0] : String(result ?? "");
-        return normalizeWhitespace(spoken);
-      } catch (error) {
-        if (!warnedLatexSpeechFailure) {
-          console.warn(
-            "[vocasync] Failed to convert LaTeX to speech:",
-            error instanceof Error ? error.message : error
-          );
-          warnedLatexSpeechFailure = true;
-        }
-        return normalizeWhitespace(trimmed);
-      }
-    })();
-    latexSpeechCache.set(cacheKey, pending);
-  }
-  return latexSpeechCache.get(cacheKey)!;
-}
-
-function normalizeWhitespace(value = ""): string {
-  return value.replace(/\r/g, "").replace(/\s+/g, " ").trim();
 }
 
 /**
@@ -110,6 +46,12 @@ export default function rehypeMathSpeech(options: RehypeMathSpeechOptions = {}) 
 
     if (!occurrences.length) return;
 
+    if (mathSpeech.length !== occurrences.length) {
+      console.warn(
+        `[vocasync] Math speech mismatch: collected ${mathSpeech.length} expression(s) from markdown but found ${occurrences.length} rendered math element(s). Check that remark-math and rehype-katex/rehype-mathjax are both configured.`
+      );
+    }
+
     let mathIndex = 0;
     for (const occurrence of occurrences) {
       if (mathIndex >= mathSpeech.length) break;
@@ -118,7 +60,7 @@ export default function rehypeMathSpeech(options: RehypeMathSpeechOptions = {}) 
       const latex = entry.latex.trim();
       if (!latex) continue;
 
-      const spoken = await speakLatex(latex, style);
+      const spoken = await speakLatex(latex, entry.display, style);
       if (!spoken) continue;
 
       const parentChildren = occurrence.parent.children;
