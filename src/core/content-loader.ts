@@ -1,7 +1,7 @@
 import { readFile, readdir, stat } from "node:fs/promises";
-import { join, extname, basename, relative } from "node:path";
-import type { ContentItem } from "../types/index.js";
+import { basename, extname, join, relative } from "node:path";
 import type { CollectionConfig } from "../config/index.js";
+import type { ContentItem } from "../types/index.js";
 
 /**
  * Parse frontmatter from markdown content.

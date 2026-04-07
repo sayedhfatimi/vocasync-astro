@@ -1,10 +1,10 @@
 import type { VocaSyncConfig } from "../config/index.js";
 import type {
-  SynthesisResponse,
-  ProjectStatus,
-  ProjectResponse,
-  AlignmentData,
   AlignedWord,
+  AlignmentData,
+  ProjectResponse,
+  ProjectStatus,
+  SynthesisResponse,
 } from "../types/index.js";
 
 /**
@@ -22,11 +22,7 @@ export class VocaSyncClient {
   /**
    * Make an authenticated API request.
    */
-  private async request<T>(
-    method: string,
-    endpoint: string,
-    body?: unknown
-  ): Promise<T> {
+  private async request<T>(method: string, endpoint: string, body?: unknown): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
 
     const headers: Record<string, string> = {
@@ -101,7 +97,7 @@ export class VocaSyncClient {
   /**
    * Create a publishable key for a project.
    * The publishable key enables public access to project artifacts via stream endpoints.
-   * 
+   *
    * @param projectUuid - The project UUID
    * @returns The publishable key (only returned once at creation)
    */
@@ -121,7 +117,7 @@ export class VocaSyncClient {
     const project = await this.request<ProjectResponse>("GET", `/projects/${projectUuid}`);
 
     // Find synthesis artifact
-    const synthesisArtifact = project.artifacts.find(a => a.artifactType === "synthesis");
+    const synthesisArtifact = project.artifacts.find((a) => a.artifactType === "synthesis");
 
     // Map to internal ProjectStatus format
     const status: ProjectStatus = {
@@ -162,9 +158,7 @@ export class VocaSyncClient {
    */
   async getAlignment(alignmentUrl: string): Promise<AlignmentData> {
     // The alignmentUrl may be a full URL or relative
-    const url = alignmentUrl.startsWith("http")
-      ? alignmentUrl
-      : `${this.baseUrl}${alignmentUrl}`;
+    const url = alignmentUrl.startsWith("http") ? alignmentUrl : `${this.baseUrl}${alignmentUrl}`;
 
     const response = await fetch(url, {
       headers: {
@@ -173,13 +167,10 @@ export class VocaSyncClient {
     });
 
     if (!response.ok) {
-      throw new VocaSyncAPIError(
-        `Failed to fetch alignment: ${response.status}`,
-        response.status
-      );
+      throw new VocaSyncAPIError(`Failed to fetch alignment: ${response.status}`, response.status);
     }
 
-    const data = await response.json() as { words: AlignedWord[]; duration: number };
+    const data = (await response.json()) as { words: AlignedWord[]; duration: number };
     return data;
   }
 
@@ -207,21 +198,19 @@ export class VocaSyncClient {
 
       // Check if synthesis is complete
       const synthComplete =
-        status.synthesisJob?.status === "completed" ||
-        status.synthesisJob?.status === "failed";
+        status.synthesisJob?.status === "completed" || status.synthesisJob?.status === "failed";
 
       // For alignment: if synthesis is complete but alignment job doesn't exist yet,
       // keep polling because the backend may still be creating the linked alignment project
       const alignComplete =
-        status.alignmentJob?.status === "completed" ||
-        status.alignmentJob?.status === "failed";
+        status.alignmentJob?.status === "completed" || status.alignmentJob?.status === "failed";
 
       // Only exit when synth is complete AND either:
       // 1. Alignment is complete/failed, OR
       // 2. We've polled enough times after synth completion that alignment should have started
       //    (alignment job will appear as "pending" or "processing" once linked)
       const shouldWaitForAlignment = synthComplete && !status.alignmentJob;
-      
+
       if (synthComplete && alignComplete) {
         // Check for failures
         if (status.synthesisJob?.status === "failed") {

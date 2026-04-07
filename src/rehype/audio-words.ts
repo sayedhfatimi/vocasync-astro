@@ -1,9 +1,9 @@
-import type { Root, Element, Text } from "hast";
-import type { Plugin } from "unified";
-import { visitParents } from "unist-util-visit-parents";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { execSync } from "node:child_process";
+import type { Element, Root, Text } from "hast";
+import type { Plugin } from "unified";
+import { visitParents } from "unist-util-visit-parents";
 import type { AlignedWord, AudioMap } from "../types/index.js";
 
 /**
@@ -62,7 +62,11 @@ function loadAudioMapSync(audioMapPath: string): AudioMap | null {
  * @param slug - The content slug for caching
  * @param publishableKey - Optional publishable key for authentication
  */
-function fetchAlignmentSync(alignmentUrl: string, slug: string, publishableKey?: string): AlignedWord[] | null {
+function fetchAlignmentSync(
+  alignmentUrl: string,
+  slug: string,
+  publishableKey?: string
+): AlignedWord[] | null {
   // Check cache first
   if (alignmentCache.has(slug)) {
     return alignmentCache.get(slug) ?? null;
@@ -77,16 +81,16 @@ function fetchAlignmentSync(alignmentUrl: string, slug: string, publishableKey?:
       fetchUrl = url.toString();
     }
 
-    // Use sync-fetch or execSync to make a synchronous HTTP request
-    // We'll use child_process.execSync with curl as a simple solution
+    // Use execFileSync with curl to make a synchronous HTTP request
+    // execFileSync avoids shell invocation, preventing command injection
     // Note: -L flag follows redirects (required for vocasync.io signed URLs)
-    const result = execSync(`curl -sL "${fetchUrl}"`, {
+    const result = execFileSync("curl", ["-sL", fetchUrl], {
       encoding: "utf-8",
       timeout: 30000,
     });
 
     const data = JSON.parse(result);
-    
+
     // The alignment response contains a words array
     const words = data.words as AlignedWord[] | undefined;
     if (words && Array.isArray(words)) {
@@ -128,7 +132,7 @@ const rehypeAudioWords: Plugin<[RehypeAudioWordsOptions?], Root> = (options = {}
   const {
     audioMapPath = ".vocasync/audio-map.json",
     classPrefix = "vocasync",
-    collectionName = "articles"
+    collectionName = "articles",
   } = options;
 
   return (tree, file) => {
@@ -140,20 +144,22 @@ const rehypeAudioWords: Plugin<[RehypeAudioWordsOptions?], Root> = (options = {}
 
     // Resolve slug from file path
     // Files are typically at paths like: /src/content/articles/hello-world.md
-    const filePath = file.path ?? (Array.isArray(file.history) ? file.history[file.history.length - 1] : undefined);
-    
+    const filePath =
+      file.path ??
+      (Array.isArray(file.history) ? file.history[file.history.length - 1] : undefined);
+
     if (!filePath) {
       return; // No file path, skip processing
     }
-    
+
     // Normalize path separators
     const normalizedPath = filePath.replace(/\\/g, "/");
-    
+
     // Try to extract slug from collection path
     // Pattern: /src/content/{collectionName}/{slug}.md or .mdx
     const collectionPattern = new RegExp(`/content/${collectionName}/([^/]+)\\.(md|mdx)$`);
     const match = normalizedPath.match(collectionPattern);
-    
+
     let slug: string | undefined;
     if (match) {
       slug = match[1];
@@ -262,7 +268,7 @@ function processTextNode(
   const wordPattern = /[\p{L}\p{N}'']+/gu;
   let match: RegExpExecArray | null;
 
-  // biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
+  // biome-ignore lint/suspicious/noAssignInExpressions: regex exec loop requires assignment in condition
   while ((match = wordPattern.exec(text)) !== null) {
     const word = match[0];
     const start = match.index;

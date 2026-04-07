@@ -1,10 +1,11 @@
 /**
  * LaTeX to Speech conversion using speech-rule-engine and mathjax-full.
- * 
+ *
  * This module provides the same interface as the vendored latex-to-speech package
  * but works with the optional peer dependencies instead of bundling MathJax.
  */
 
+// biome-ignore lint/suspicious/noExplicitAny: speech-rule-engine is an optional peer dep with no bundled types
 let SRE: any = null;
 let tex2mml: ((latex: string) => string) | null = null;
 let engineSetup = false;
@@ -16,7 +17,7 @@ let initPromise: Promise<boolean> | null = null;
  */
 async function init(): Promise<boolean> {
   if (initPromise) return initPromise;
-  
+
   initPromise = (async () => {
     try {
       // Dynamically import speech-rule-engine
@@ -34,32 +35,34 @@ async function init(): Promise<boolean> {
       const { HTMLDocument } = await import("mathjax-full/js/handlers/html/HTMLDocument.js");
       // @ts-expect-error - mathjax-full is an optional peer dependency
       const { liteAdaptor } = await import("mathjax-full/js/adaptors/liteAdaptor.js");
-      // @ts-expect-error - mathjax-full is an optional peer dependency
-      const { SerializedMmlVisitor } = await import("mathjax-full/js/core/MmlTree/SerializedMmlVisitor.js");
+      const { SerializedMmlVisitor } = await import(
+        // @ts-expect-error - mathjax-full is an optional peer dependency
+        "mathjax-full/js/core/MmlTree/SerializedMmlVisitor.js"
+      );
       // @ts-expect-error - mathjax-full is an optional peer dependency
       const { AllPackages } = await import("mathjax-full/js/input/tex/AllPackages.js");
 
       // Filter out problematic packages
       const packages = AllPackages.filter((p: string) => p !== "bussproofs");
-      
+
       // Create TeX input jax with all packages
       const texInput = new TeX({ packages });
-      
+
       // Create a minimal HTML document for conversion
       const adaptor = liteAdaptor();
       const doc = new HTMLDocument("", adaptor, { InputJax: texInput });
-      
+
       // Create a visitor to serialize to MathML
       const visitor = new SerializedMmlVisitor();
-      
+
       // Create the tex2mml function
       tex2mml = (latex: string): string => {
         const node = doc.convert(latex, { display: true });
         return visitor.visitTree(node);
       };
-      
+
       return true;
-    } catch (e) {
+    } catch {
       console.warn("[vocasync] mathjax-full not installed. Math-to-speech disabled.");
       console.warn("[vocasync] Install with: npm install mathjax-full speech-rule-engine");
       return false;
@@ -82,17 +85,14 @@ export interface SREOptions {
 
 /**
  * Convert an array of LaTeX expressions to speech.
- * 
+ *
  * @param exprs - Array of LaTeX expressions to convert
  * @param options - SRE configuration options
  * @returns Promise resolving to array of speech strings
  */
-export async function latexToSpeech(
-  exprs: string[],
-  options: SREOptions = {}
-): Promise<string[]> {
+export async function latexToSpeech(exprs: string[], options: SREOptions = {}): Promise<string[]> {
   const available = await init();
-  
+
   if (!available || !SRE || !tex2mml) {
     // Return empty descriptions when dependencies not available
     return exprs.map(() => "");
@@ -116,7 +116,7 @@ export async function latexToSpeech(
     try {
       const mml = tex2mml!(latex);
       return SRE!.toSpeech(mml);
-    } catch (e) {
+    } catch {
       console.warn(`[vocasync] Failed to convert LaTeX to speech: ${latex}`);
       return "";
     }

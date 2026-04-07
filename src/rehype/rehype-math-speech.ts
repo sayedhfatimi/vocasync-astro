@@ -5,7 +5,9 @@ import type { MathSpeechEntry } from "./remark-math-speech.js";
 
 const SR_SPEECH_CLASS = "vocasync-math-speech";
 
-let latexToSpeech: ((exprs: string[], options?: Record<string, unknown>) => Promise<string[]>) | null = null;
+let latexToSpeech:
+  | ((exprs: string[], options?: Record<string, unknown>) => Promise<string[]>)
+  | null = null;
 let latexToSpeechLoadAttempted = false;
 
 const latexSpeechCache = new Map<string, Promise<string>>();
@@ -22,10 +24,7 @@ interface RehypeMathSpeechOptions {
 /**
  * Convert LaTeX to spoken text using speech-rule-engine and mathjax-full.
  */
-async function speakLatex(
-  value: string,
-  style: string = "clearspeak"
-): Promise<string> {
+async function speakLatex(value: string, style = "clearspeak"): Promise<string> {
   const trimmed = String(value ?? "").trim();
   if (!trimmed) return "";
 
@@ -35,7 +34,7 @@ async function speakLatex(
     try {
       const mod = await import("../lib/latex-to-speech/index.js");
       latexToSpeech = mod.latexToSpeech || mod.default;
-    } catch (e) {
+    } catch {
       console.warn(
         "[vocasync] Math-to-speech initialization failed. Install optional dependencies:",
         "\n  npm install speech-rule-engine mathjax-full"
@@ -82,7 +81,7 @@ function normalizeWhitespace(value = ""): string {
 /**
  * Rehype plugin that injects hidden spoken text next to math elements.
  * This allows rehypeAudioWords to wrap the spoken words with timing data.
- * 
+ *
  * Must run AFTER rehype-katex or rehype-mathjax, and BEFORE rehypeAudioWords.
  */
 export default function rehypeMathSpeech(options: RehypeMathSpeechOptions = {}) {

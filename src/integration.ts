@@ -1,33 +1,10 @@
 import type { AstroIntegration } from "astro";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
-import { validateConfig, type VocaSyncUserConfig } from "./config/index.js";
-import { loadAudioMap } from "./core/audio-map.js";
+import { type VocaSyncConfig, loadVocaSyncConfig, validateConfig } from "./config/index.js";
+import { createEmptyAudioMap, loadAudioMap } from "./core/audio-map.js";
 import type { AudioMap } from "./types/index.js";
 
 // Cache for the loaded audio map
 let audioMapCache: AudioMap | null = null;
-
-/**
- * Load configuration from vocasync.config.ts/js/mjs.
- */
-async function loadVocaSyncConfig(): Promise<VocaSyncUserConfig> {
-  const cwd = process.cwd();
-
-  for (const ext of [".ts", ".mjs", ".js"]) {
-    const configFile = resolve(cwd, `vocasync.config${ext}`);
-    if (existsSync(configFile)) {
-      const fileUrl = `file://${configFile}`;
-      const module = await import(fileUrl);
-      return (module.default || module) as VocaSyncUserConfig;
-    }
-  }
-
-  throw new Error(
-    "No VocaSync configuration found.\n" +
-      "Create a vocasync.config.mjs file with your configuration."
-  );
-}
 
 /**
  * VocaSync Astro Integration.
@@ -58,7 +35,7 @@ export default function vocasyncIntegration(): AstroIntegration {
     hooks: {
       "astro:config:setup": async ({ updateConfig, logger }) => {
         // Load config from vocasync.config.mjs
-        let config;
+        let config: VocaSyncConfig;
         try {
           const userConfig = await loadVocaSyncConfig();
           config = validateConfig(userConfig);
@@ -77,7 +54,7 @@ export default function vocasyncIntegration(): AstroIntegration {
           logger.warn(
             `Audio map not found at ${config.output.audioMapPath}. Run 'npx vocasync sync' first.`
           );
-          audioMapCache = { version: 1, updatedAt: "", entries: {} };
+          audioMapCache = createEmptyAudioMap();
         }
 
         // Add virtual module for audio-map access

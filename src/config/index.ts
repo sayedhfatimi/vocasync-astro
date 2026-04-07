@@ -28,3 +28,5 @@ export type {
   Language,
   MathStyle,
 } from "./schema.js";
+
+export { loadVocaSyncConfig } from "./loader.js";

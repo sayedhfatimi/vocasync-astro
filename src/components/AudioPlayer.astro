@@ -224,7 +224,7 @@ const audioDataJson = audioEntry ? JSON.stringify({
 
   <!-- Mini player (floating) -->
   {enableMiniPlayer && (
-  <div class="vocasync-mini-player" data-mini-player hidden>
+  <div class="vocasync-mini-player" id={`${playerId}-mini`} data-mini-player hidden>
     <button 
       type="button" 
       class="vocasync-mini-player__play-btn"

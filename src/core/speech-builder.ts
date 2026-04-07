@@ -1,9 +1,9 @@
-import { unified } from "unified";
-import remarkParse from "remark-parse";
+import type { Code, Content, Emphasis, Heading, InlineCode, Root, Strong, Text } from "mdast";
 import remarkMath from "remark-math";
-import type { Root, Content, Text, InlineCode, Code, Heading, Emphasis, Strong } from "mdast";
-import type { ContentItem, SpeechDocument } from "../types/index.js";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
 import type { MathConfig } from "../config/index.js";
+import type { ContentItem, SpeechDocument } from "../types/index.js";
 import { computeHash } from "./hash-manager.js";
 
 /**
@@ -15,7 +15,9 @@ interface LaTeXConverter {
 
 // Cache for latex-to-speech results
 const latexSpeechCache = new Map<string, Promise<string>>();
-let latexToSpeech: ((exprs: string[], options?: Record<string, unknown>) => Promise<string[]>) | null = null;
+let latexToSpeech:
+  | ((exprs: string[], options?: Record<string, unknown>) => Promise<string[]>)
+  | null = null;
 let latexToSpeechLoadAttempted = false;
 let warnedLatexSpeechFailure = false;
 
@@ -41,7 +43,7 @@ async function createLatexConverter(config: MathConfig): Promise<LaTeXConverter 
     try {
       const mod = await import("../lib/latex-to-speech/index.js");
       latexToSpeech = mod.latexToSpeech || mod.default;
-    } catch (e) {
+    } catch {
       console.warn(
         "[vocasync] Math-to-speech initialization failed. Install optional dependencies:",
         "\n  npm install speech-rule-engine mathjax-full"
@@ -64,7 +66,7 @@ async function createLatexConverter(config: MathConfig): Promise<LaTeXConverter 
     async convert(latex: string, display: boolean): Promise<string> {
       const trimmed = latex.trim();
       if (!trimmed) return "";
-      
+
       const cacheKey = `${display}:${trimmed}`;
       if (!latexSpeechCache.has(cacheKey)) {
         const pending = (async () => {
@@ -284,7 +286,7 @@ export async function buildSpeechDocument(
   const resolvedParts = await Promise.all(textParts);
 
   // Clean up and normalize text
-  let text = resolvedParts
+  const text = resolvedParts
     .join(" ")
     .replace(/\s+/g, " ") // Normalize whitespace
     .replace(/\n\s*\n/g, "\n\n") // Preserve paragraph breaks

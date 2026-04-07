@@ -1,5 +1,5 @@
-import { visit } from "unist-util-visit";
 import type { Root } from "mdast";
+import { visit } from "unist-util-visit";
 import type { VFile } from "vfile";
 
 export type MathSpeechEntry = {
@@ -15,9 +15,9 @@ export type MathSpeechEntry = {
 export default function remarkMathSpeechCollector() {
   return function transformer(tree: Root, file: VFile) {
     const entries: MathSpeechEntry[] = [];
-    visit(tree, (node: any) => {
-      if (node?.type !== "math" && node?.type !== "inlineMath") return;
-      const latex = String(node.value ?? "").trim();
+    visit(tree, (node) => {
+      if (node.type !== "math" && node.type !== "inlineMath") return;
+      const latex = String("value" in node ? (node.value ?? "") : "").trim();
       if (!latex) return;
       entries.push({
         latex,

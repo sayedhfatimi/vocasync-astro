@@ -1,6 +1,6 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { AudioMap, AudioArtifact } from "../types/index.js";
+import type { AudioArtifact, AudioMap } from "../types/index.js";
 
 /**
  * Create an empty audio map structure

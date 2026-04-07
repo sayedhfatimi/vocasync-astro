@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { validateConfig, type VocaSyncUserConfig } from "./config/index.js";
 import { createClient } from "./api/client.js";
-import { sync, checkConfig } from "./sync/orchestrator.js";
+import { loadVocaSyncConfig, validateConfig } from "./config/index.js";
+import { checkConfig, sync } from "./sync/orchestrator.js";
 
 /**
  * Load .env file manually (no external dependency)
@@ -13,25 +13,27 @@ import { sync, checkConfig } from "./sync/orchestrator.js";
 async function loadEnvFile(): Promise<void> {
   const envPath = resolve(process.cwd(), ".env");
   if (!existsSync(envPath)) return;
-  
+
   try {
     const content = await readFile(envPath, "utf-8");
     for (const line of content.split("\n")) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith("#")) continue;
-      
+
       const eqIndex = trimmed.indexOf("=");
       if (eqIndex === -1) continue;
-      
+
       const key = trimmed.slice(0, eqIndex).trim();
       let value = trimmed.slice(eqIndex + 1).trim();
-      
+
       // Remove quotes if present
-      if ((value.startsWith('"') && value.endsWith('"')) ||
-          (value.startsWith("'") && value.endsWith("'"))) {
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
         value = value.slice(1, -1);
       }
-      
+
       // Don't override existing env vars
       if (!(key in process.env)) {
         process.env[key] = value;
@@ -144,56 +146,6 @@ function parseArgs(args: string[]): {
 }
 
 /**
- * Load configuration from vocasync.config.ts/js/mjs.
- * 
- * @example
- * ```ts
- * // vocasync.config.mjs
- * export default {
- *   collection: { name: "articles", path: "./src/content/articles" },
- *   voice: { id: "aura-asteria-en", provider: "deepgram" },
- * };
- * ```
- */
-async function loadConfig(configPath?: string): Promise<VocaSyncUserConfig> {
-  const cwd = process.cwd();
-
-  // Try explicit config path first
-  if (configPath) {
-    const fullPath = resolve(cwd, configPath);
-    return loadConfigFile(fullPath);
-  }
-
-  // Try vocasync.config.ts / .mjs / .js
-  for (const ext of [".ts", ".mjs", ".js"]) {
-    const configFile = resolve(cwd, `vocasync.config${ext}`);
-    if (existsSync(configFile)) {
-      return await loadConfigFile(configFile);
-    }
-  }
-
-  throw new Error(
-    "No VocaSync configuration found.\n" +
-      "Create a vocasync.config.mjs file with your configuration."
-  );
-}
-
-/**
- * Load and execute a config file.
- * Uses file:// URLs for proper ESM import resolution.
- */
-async function loadConfigFile(filePath: string): Promise<VocaSyncUserConfig> {
-  try {
-    // Use file:// URL for proper ESM resolution
-    const fileUrl = `file://${filePath}`;
-    const module = await import(fileUrl);
-    return (module.default || module) as VocaSyncUserConfig;
-  } catch (error) {
-    throw new Error(`Failed to load config from ${filePath}: ${error}`);
-  }
-}
-
-/**
  * Main CLI entry point.
  */
 async function main(): Promise<void> {
@@ -214,7 +166,7 @@ async function main(): Promise<void> {
 
   try {
     // Load configuration
-    const userConfig = await loadConfig(options.config as string | undefined);
+    const userConfig = await loadVocaSyncConfig(options.config as string | undefined);
     const config = validateConfig(userConfig);
     const client = createClient(config);
 

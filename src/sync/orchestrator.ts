@@ -1,17 +1,17 @@
+import { type VocaSyncClient, getStreamingUrls } from "../api/client.js";
 import type { VocaSyncConfig } from "../config/index.js";
+import { getAudioEntry, loadAudioMap, saveAudioMap, setAudioEntry } from "../core/audio-map.js";
+import { loadContent } from "../core/content-loader.js";
+import { hasChanged } from "../core/hash-manager.js";
+import { buildSpeechDocument } from "../core/speech-builder.js";
 import type {
-  ContentItem,
   AudioArtifact,
   AudioMap,
+  ContentItem,
   SyncResult,
-  SyncSummary,
   SyncStatus,
+  SyncSummary,
 } from "../types/index.js";
-import { loadContent } from "../core/content-loader.js";
-import { buildSpeechDocument } from "../core/speech-builder.js";
-import { loadAudioMap, saveAudioMap, getAudioEntry, setAudioEntry } from "../core/audio-map.js";
-import { hasChanged } from "../core/hash-manager.js";
-import { VocaSyncClient, getStreamingUrls } from "../api/client.js";
 
 /**
  * Options for the sync operation.
@@ -69,13 +69,7 @@ export async function sync(
 
   // Process each item
   for (const item of items) {
-    const result = await processItem(
-      item,
-      config,
-      client,
-      audioMap,
-      { force, dryRun, onProgress }
-    );
+    const result = await processItem(item, config, client, audioMap, { force, dryRun, onProgress });
 
     results.push(result);
 
