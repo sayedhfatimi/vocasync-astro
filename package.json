@@ -47,11 +47,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sayedhfatimi/vocasync-astro.git"
+    "url": "git+https://github.com/vocasync/astro.git"
   },
-  "homepage": "https://github.com/sayedhfatimi/vocasync-astro#readme",
+  "homepage": "https://github.com/vocasync/astro#readme",
   "bugs": {
-    "url": "https://github.com/sayedhfatimi/vocasync-astro/issues"
+    "url": "https://github.com/vocasync/astro/issues"
   },
   "peerDependencies": {
     "astro": "^4.0.0 || ^5.0.0",

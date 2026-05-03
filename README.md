@@ -15,7 +15,7 @@ Turn your Astro blog posts into narrated audio with word-level synchronization.
 
 🔗 **[Live Demo](https://astro-integration-demo.vocasync.io)** — See the audio player and word highlighting in action
 
-📂 **[Demo Source Code](https://github.com/sayedhfatimi/vocasync-astro-demo)** — Example implementation for reference
+📂 **[Demo Source Code](https://github.com/vocasync/astro-demo)** — Example implementation for reference
 
 ## Table of Contents
 
