@@ -102,11 +102,11 @@ mkdir -p src/data
 npx vocasync sync
 ```
 
-This will:
-- Read all content from your collection
-- Submit synthesis jobs to VocaSync API
-- Wait for processing to complete
-- Save metadata to `audio-map.json`
+This will, for each post:
+- Read the content from your collection
+- Submit a **synthesis** job, then an explicit **alignment** job (with the post's transcript)
+- Wait for both to complete and fetch the word timings
+- Save everything (URLs, keys, timings) to `audio-map.json`
 
 ### 6. Add the Player Component
 
@@ -176,9 +176,10 @@ export default {
   
   // Synthesis settings
   synthesis: {
-    voice: "onyx",                   // alloy, echo, fable, onyx, nova, shimmer
+    // alloy, ash, coral, echo, fable, onyx, nova, sage, shimmer
+    voice: "onyx",
     quality: "sd",                   // sd (standard) or hd (high definition)
-    format: "mp3",                   // mp3, opus, aac, flac
+    format: "mp3",                   // mp3, aac, opus, flac, wav (sent as outputFormat)
   },
   
   // LaTeX/math support
@@ -202,6 +203,24 @@ export default {
   },
 };
 ```
+
+### Per-Post Overrides
+
+Any post can override the global `voice`, `language`, or `format` from its frontmatter.
+Values that aren't overridden fall back to `vocasync.config.mjs`:
+
+```markdown
+---
+title: "Bienvenue"
+language: fr
+voice: shimmer
+---
+
+Bonjour…
+```
+
+Invalid values are skipped with a warning. Changing any of these re-syncs the post
+(the change-detection hash includes the resolved voice/language/format).
 
 ### Rehype Plugin Options
 
@@ -278,7 +297,7 @@ import AudioPlayer from "@vocasync/astro/components/AudioPlayer.astro";
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `slug` | `string` | required | Post slug to lookup audio |
-| `audioEntry` | `object` | `undefined` | Audio entry from audio-map.json (audioUrl, publishableKey, etc.) |
+| `audioEntry` | `object` | `undefined` | Audio entry from audio-map.json (`audioUrl`, `synthesisPublishableKey`, `words`, `duration`) |
 | `label` | `string` | `"Listen to this article"` | Accessible label |
 | `showPlaceholder` | `boolean` | `true` | Show message when no audio |
 | `class` | `string` | `""` | Additional CSS classes |
@@ -338,7 +357,7 @@ VocaSync supports 14 languages where both speech synthesis and forced alignment 
 | `ja` | Japanese | `tr` | Turkish |
 | `ko` | Korean | `uk` | Ukrainian |
 
-> **Note:** VocaSync requires both speech synthesis and word-level forced alignment for each language. While synthesis (powered by OpenAI TTS) supports 57 languages, alignment (powered by Montreal Forced Aligner) is available for a smaller set. The 14 languages listed above are where both capabilities overlap.
+> **Note:** VocaSync requires both speech synthesis and word-level forced alignment for each language. While synthesis (powered by OpenAI TTS) supports 61 languages, alignment (powered by Montreal Forced Aligner) is available for a smaller set. The 14 languages listed above are where both capabilities overlap, and they match the platform's alignment-supported set.
 
 ## Math Support
 
@@ -346,51 +365,65 @@ VocaSync supports LaTeX math equations using [Speech Rule Engine](https://github
 
 ### Installation
 
-Install the optional peer dependencies:
+Install the math dependencies. `mathjax-full` powers both the spoken form and (via
+`rehype-mathjax`) the visual rendering, so you don't also need KaTeX:
 
 ```bash
-npm install speech-rule-engine mathjax-full
+bun add remark-math rehype-mathjax mathjax-full speech-rule-engine
 ```
 
 ### Setup
 
-For math to work with word highlighting, you need additional plugins that run in a specific order:
+Math needs three plugins in a specific order:
 
 ```javascript
 // astro.config.mjs
 import { defineConfig } from "astro/config";
 import vocasync from "@vocasync/astro";
-import { rehypeAudioWords, rehypeMathSpeech, remarkMathSpeech } from "@vocasync/astro/rehype";
+import { rehypeAudioWords, rehypeMathSpeech } from "@vocasync/astro/rehype";
 import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex"; // or rehype-mathjax
+import rehypeMathjax from "rehype-mathjax";
+
+const collectionName = "blog";
+const audioMapPath = "src/data/audio-map.json";
 
 export default defineConfig({
   markdown: {
-    remarkPlugins: [
-      remarkMath,           // 1. Parse LaTeX syntax
-      remarkMathSpeech,     // 2. Collect math expressions
-    ],
+    remarkPlugins: [remarkMath], // parse $...$ / $$...$$
     rehypePlugins: [
-      rehypeKatex,          // 3. Render math to HTML
-      rehypeMathSpeech,     // 4. Inject hidden spoken text
-      [rehypeAudioWords, {  // 5. Wrap words with timing (runs last)
-        collectionName: "blog",
-        audioMapPath: "src/data/audio-map.json"
-      }]
-    ]
+      [rehypeMathSpeech, { collectionName, audioMapPath }], // attach spoken form (before render)
+      rehypeMathjax,                                        // render math to HTML
+      [rehypeAudioWords, { collectionName, audioMapPath }], // wrap words + math units
+    ],
   },
   integrations: [vocasync()],
 });
 ```
 
+Enable math in `vocasync.config.mjs` so `vocasync sync` generates the spoken forms:
+
+```javascript
+export default {
+  // ...
+  math: { enabled: true, style: "clearspeak" }, // or "mathspeak"
+};
+```
+
+> **Currency `$` collides with math.** With `remark-math` enabled, `$5 … $1200` is parsed
+> as an inline math span. Escape currency dollar signs as `\$` (e.g. `\$5`, `\$1200`) so
+> they're treated as text — VocaSync then speaks them correctly ("five dollars").
+
 ### How It Works
 
-1. **remarkMathSpeech** collects all LaTeX expressions during markdown parsing
-2. **rehypeKatex/rehypeMathjax** renders the math to visual HTML
-3. **rehypeMathSpeech** converts LaTeX to spoken text (e.g., `$x^2$` → "x squared") and injects it as hidden `<span>` elements
-4. **rehypeAudioWords** wraps all text (including the spoken math) with timing spans
-
-The spoken text is visually hidden (`sr-only`) but gets highlighted during audio playback.
+1. During `vocasync sync` (Node/CLI), each LaTeX expression is converted to spoken text
+   (e.g. `$x^2$` → "x squared") and stored in `audio-map.json`. It's spoken and aligned
+   as part of the post's audio.
+2. At build time, **rehypeMathSpeech** reads those spoken forms from the audio map and
+   attaches each as a `data-speech` attribute on the math element (math-to-speech never
+   runs inside the Astro/Vite build).
+3. **rehypeMathjax** renders the math to visual HTML.
+4. **rehypeAudioWords** wraps each math expression as a single highlight unit, so the whole
+   equation lights up together while it's read.
 
 ### Configuration
 
@@ -484,20 +517,23 @@ jobs:
 
 ### What is audio-map.json?
 
-The `audio-map.json` file is the **source of truth** for VocaSync. It stores:
+The `audio-map.json` file is the **source of truth** for VocaSync. Each entry stores:
 
-- Project UUIDs for each synced article
-- Content hashes (to detect changes)
-- Audio and alignment URLs
-- Publishable keys (for authenticated streaming access)
-- Timestamps
+- The synthesis and alignment **project UUIDs** (the two-POST flow uses two projects)
+- A **publishable key** for each (the synthesis key streams the audio; the alignment key
+  was used at build time to fetch the timings)
+- The **word timings** (`words`) and any **math spoken forms** (`mathSpeech`), embedded so
+  the player needs no runtime alignment fetch
+- The resolved `voice` / `language` / `format`, a content hash, and timestamps
 
 ### Audio Map Versions
 
-- **Version 1** (legacy): Does not include publishable keys
-- **Version 2** (current): Includes `publishableKey` field for each entry
+- **Version 1/2** (legacy): a single project + one `publishableKey`, no embedded timings.
+- **Version 3** (current): two projects + two publishable keys, embedded `words` timings,
+  and per-post `voice`/`language`/`format`.
 
-If you have an existing v1 audio map, running `npx vocasync sync` will automatically migrate entries by creating publishable keys without re-synthesizing audio.
+Legacy v1/v2 entries are missing the v3 fields, so the first `vocasync sync` re-synthesizes
+them once to produce complete v3 entries.
 
 ### ⚠️ Do Not Delete
 
