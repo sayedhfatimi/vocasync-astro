@@ -1,86 +1,91 @@
 import type { Element, Parent, Root } from "hast";
 import { visitParents } from "unist-util-visit-parents";
-import type { VFile } from "vfile";
-import { speakLatex } from "../lib/latex-to-speech/speak.js";
-import type { MathSpeechEntry } from "./remark-math-speech.js";
+import { loadAudioMapSync, resolveSlug } from "./shared.js";
 
-const SR_SPEECH_CLASS = "vocasync-math-speech";
-
-interface RehypeMathSpeechOptions {
+export interface RehypeMathSpeechOptions {
   /**
-   * SRE domain style for math-to-speech conversion
-   * @default "clearspeak"
+   * Path to the audio map JSON file (absolute or relative to project root).
+   * @default ".vocasync/audio-map.json"
    */
-  style?: "clearspeak" | "mathspeak";
+  audioMapPath?: string;
+  /**
+   * Content collection folder name used to extract slugs.
+   * @default "articles"
+   */
+  collectionName?: string;
 }
 
 /**
- * Rehype plugin that injects hidden spoken text next to math elements.
- * This allows rehypeAudioWords to wrap the spoken words with timing data.
+ * Rehype plugin that attaches each math expression's spoken form as a
+ * `data-speech` attribute, so rehypeAudioWords can wrap the whole expression
+ * as one highlight unit whose `data-n` is the spoken token count.
  *
- * Must run AFTER rehype-katex or rehype-mathjax, and BEFORE rehypeAudioWords.
+ * The spoken forms are read from the audio map (where `vocasync sync` stored
+ * them, keyed by latex) — math-to-speech runs only in the CLI, never here.
+ * This guarantees the math tokens match what was synthesized AND avoids
+ * running the math engines inside Astro's Vite build.
+ *
+ * Reads the LaTeX from the `code.math-inline` / `code.math-display` elements
+ * that `remark-math` produces and wraps each in
+ * `<span class="vocasync-math" data-speech="…">`. MUST run BEFORE
+ * rehype-mathjax / rehype-katex (which replace the inner element) and before
+ * rehypeAudioWords.
  */
 export default function rehypeMathSpeech(options: RehypeMathSpeechOptions = {}) {
-  const { style = "clearspeak" } = options;
+  const { audioMapPath = ".vocasync/audio-map.json", collectionName = "articles" } = options;
 
-  return async function transformer(tree: Root, file: VFile) {
-    const mathSpeech = file.data.mathSpeech as MathSpeechEntry[] | undefined;
-    if (!mathSpeech?.length) return;
+  return function transformer(tree: Root, file: { path?: string; history?: string[] }) {
+    const audioMap = loadAudioMapSync(audioMapPath);
+    if (!audioMap) return;
+    const slug = resolveSlug(file, collectionName);
+    if (!slug) return;
+    const mathSpeech = audioMap.entries[slug]?.mathSpeech;
+    if (!mathSpeech) return;
 
-    // Find all MathJax/KaTeX container elements
-    const occurrences: Array<{ node: Element; parent: Parent }> = [];
+    const targets: Array<{ node: Element; parent: Parent; display: boolean }> = [];
     visitParents(tree, "element", (node, ancestors) => {
-      // MathJax uses mjx-container, KaTeX uses .katex class
-      const isMathJax = node.tagName === "mjx-container";
-      const isKatex =
-        node.tagName === "span" &&
-        Array.isArray(node.properties?.className) &&
-        (node.properties.className as string[]).includes("katex");
-
-      if (!isMathJax && !isKatex) return;
-
+      const el = node as Element;
+      const classes = classNames(el);
+      const isInline = classes.includes("math-inline");
+      const isDisplay = classes.includes("math-display");
+      if (!isInline && !isDisplay) return;
       const parent = ancestors[ancestors.length - 1] as Parent | undefined;
       if (!parent) return;
-      occurrences.push({ node, parent });
+      targets.push({ node: el, parent, display: isDisplay });
     });
 
-    if (!occurrences.length) return;
-
-    if (mathSpeech.length !== occurrences.length) {
-      console.warn(
-        `[vocasync] Math speech mismatch: collected ${mathSpeech.length} expression(s) from markdown but found ${occurrences.length} rendered math element(s). Check that remark-math and rehype-katex/rehype-mathjax are both configured.`
-      );
-    }
-
-    let mathIndex = 0;
-    for (const occurrence of occurrences) {
-      if (mathIndex >= mathSpeech.length) break;
-      const entry = mathSpeech[mathIndex];
-      mathIndex += 1;
-      const latex = entry.latex.trim();
+    for (const t of targets) {
+      const latex = textContent(t.node).trim();
       if (!latex) continue;
-
-      const spoken = await speakLatex(latex, entry.display, style);
+      const spoken = mathSpeech[`${t.display ? "d" : "i"}:${latex}`];
       if (!spoken) continue;
-
-      const parentChildren = occurrence.parent.children;
-      const index = parentChildren.indexOf(occurrence.node);
+      const index = t.parent.children.indexOf(t.node);
       if (index === -1) continue;
-
-      // Create a hidden span with the spoken text
-      const speechNode: Element = {
+      // Wrap the math element; the wrapper survives the renderer replacing the
+      // inner code element with mjx-container / .katex.
+      const wrapper: Element = {
         type: "element",
         tagName: "span",
-        properties: {
-          className: ["sr-only", SR_SPEECH_CLASS],
-          "data-math-speech": entry.display ? "display" : "inline",
-          "aria-hidden": "true",
-        },
-        children: [{ type: "text", value: spoken }],
+        properties: { className: ["vocasync-math"], dataSpeech: spoken },
+        children: [t.node],
       };
-
-      // Insert the speech node right after the math element
-      parentChildren.splice(index + 1, 0, speechNode);
+      t.parent.children[index] = wrapper;
     }
   };
+}
+
+function classNames(el: Element): string[] {
+  const cls = el.properties?.className;
+  if (Array.isArray(cls)) return cls.filter((c): c is string => typeof c === "string");
+  if (typeof cls === "string") return cls.split(/\s+/);
+  return [];
+}
+
+function textContent(node: Element): string {
+  let out = "";
+  for (const child of node.children) {
+    if (child.type === "text") out += child.value;
+    else if (child.type === "element") out += textContent(child as Element);
+  }
+  return out;
 }

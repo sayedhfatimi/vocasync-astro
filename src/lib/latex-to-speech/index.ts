@@ -20,26 +20,25 @@ async function init(): Promise<boolean> {
 
   initPromise = (async () => {
     try {
-      // Dynamically import speech-rule-engine
-      SRE = await import("speech-rule-engine");
+      // Dynamically import speech-rule-engine. Normalize CJS/ESM interop:
+      // bun hoists named exports onto the namespace, but Vite's SSR loader
+      // (used during `astro build`) puts them under `.default`.
+      // biome-ignore lint/suspicious/noExplicitAny: optional peer dep, no bundled types
+      const sreMod: any = await import("speech-rule-engine");
+      SRE = sreMod.default ?? sreMod;
     } catch {
       console.warn("[vocasync] speech-rule-engine not installed. Math-to-speech disabled.");
       return false;
     }
 
     try {
-      // Dynamically import mathjax-full components for tex2mml
-      // @ts-expect-error - mathjax-full is an optional peer dependency
+      // Dynamically import mathjax-full components for tex2mml.
       const { TeX } = await import("mathjax-full/js/input/tex.js");
-      // @ts-expect-error - mathjax-full is an optional peer dependency
       const { HTMLDocument } = await import("mathjax-full/js/handlers/html/HTMLDocument.js");
-      // @ts-expect-error - mathjax-full is an optional peer dependency
       const { liteAdaptor } = await import("mathjax-full/js/adaptors/liteAdaptor.js");
       const { SerializedMmlVisitor } = await import(
-        // @ts-expect-error - mathjax-full is an optional peer dependency
         "mathjax-full/js/core/MmlTree/SerializedMmlVisitor.js"
       );
-      // @ts-expect-error - mathjax-full is an optional peer dependency
       const { AllPackages } = await import("mathjax-full/js/input/tex/AllPackages.js");
 
       // Filter out problematic packages
@@ -64,7 +63,7 @@ async function init(): Promise<boolean> {
       return true;
     } catch {
       console.warn("[vocasync] mathjax-full not installed. Math-to-speech disabled.");
-      console.warn("[vocasync] Install with: npm install mathjax-full speech-rule-engine");
+      console.warn("[vocasync] Install with: bun add mathjax-full speech-rule-engine");
       return false;
     }
   })();

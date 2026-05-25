@@ -7,7 +7,7 @@ import type { AudioArtifact, AudioMap } from "../types/index.js";
  */
 export function createEmptyAudioMap(): AudioMap {
   return {
-    version: 2,
+    version: 3,
     updatedAt: new Date().toISOString(),
     entries: {},
   };

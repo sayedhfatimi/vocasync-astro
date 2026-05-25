@@ -1,14 +1,46 @@
 import type { VocaSyncConfig } from "../config/index.js";
 import type {
   AlignedWord,
-  AlignmentData,
+  AlignmentPresignResponse,
+  AlignmentSubmitResponse,
   ProjectResponse,
   ProjectStatus,
   SynthesisResponse,
 } from "../types/index.js";
 
 /**
- * VocaSync API client for synthesis and alignment operations.
+ * Map a synthesis language (ISO 639-1) to its alignment locale (BCP-47).
+ * Only the alignment-supported set is valid; defaults to en-US.
+ */
+export const SYNTHESIS_TO_ALIGNMENT_LANGUAGE: Record<string, string> = {
+  en: "en-US",
+  fr: "fr",
+  de: "de",
+  es: "es",
+  pt: "pt-PT",
+  sv: "sv",
+  cs: "cs",
+  pl: "pl",
+  tr: "tr",
+  ru: "ru",
+  uk: "uk",
+  ja: "ja",
+  ko: "ko",
+  zh: "zh-CN",
+};
+
+export function toAlignmentLocale(language: string): string {
+  return SYNTHESIS_TO_ALIGNMENT_LANGUAGE[language] ?? "en-US";
+}
+
+/**
+ * VocaSync API client.
+ *
+ * Implements the two-POST audio pipeline: synthesis (POST /synthesis) then
+ * an explicit alignment job (presign -> S3 upload -> POST /alignment) with a
+ * client-supplied transcript, so alignment word indices line up with the
+ * rehype plugin's `data-i` token stream. `align=true` auto-chaining is
+ * deprecated and no longer used.
  */
 export class VocaSyncClient {
   private baseUrl: string;
@@ -19,25 +51,19 @@ export class VocaSyncClient {
     this.baseUrl = baseUrl;
   }
 
-  /**
-   * Make an authenticated API request.
-   */
+  /** Make an authenticated JSON API request. */
   private async request<T>(method: string, endpoint: string, body?: unknown): Promise<T> {
-    const url = `${this.baseUrl}${endpoint}`;
-
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${this.apiKey}`,
-      "Content-Type": "application/json",
-    };
-
-    const response = await fetch(url, {
+    const response = await fetch(`${this.baseUrl}${endpoint}`, {
       method,
-      headers,
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
       body: body ? JSON.stringify(body) : undefined,
     });
 
     if (!response.ok) {
-      const errorBody = await response.text();
+      const errorBody = await response.text().catch(() => "");
       throw new VocaSyncAPIError(
         `API request failed: ${response.status} ${response.statusText}`,
         response.status,
@@ -45,14 +71,17 @@ export class VocaSyncClient {
       );
     }
 
-    return response.json() as T;
+    return response.json() as Promise<T>;
+  }
+
+  /** Stream URL (without publishable key) for an artifact. */
+  streamUrl(projectUuid: string, kind: "synthesis" | "alignment"): string {
+    return `${this.baseUrl}/stream/${projectUuid}/${kind}`;
   }
 
   /**
-   * Create a synthesis project with alignment.
-   *
-   * Uses the `align=true` flag to automatically create a linked alignment project
-   * that starts processing once synthesis completes.
+   * Create a synthesis project. No `align` flag — alignment is run as a
+   * separate explicit job (see runAlignment).
    */
   async synthesize(params: {
     name: string;
@@ -60,32 +89,27 @@ export class VocaSyncClient {
     voice: string;
     quality: "sd" | "hd";
     language: string;
+    outputFormat: string;
   }): Promise<SynthesisResponse> {
-    const url = `${this.baseUrl}/synthesis`;
-
-    // API expects multipart/form-data
     const formData = new FormData();
     formData.append("textType", "text");
     formData.append("text", params.text);
     formData.append("voice", params.voice);
     formData.append("quality", params.quality);
     formData.append("language", params.language);
+    formData.append("outputFormat", params.outputFormat);
     formData.append("projectName", params.name);
-    formData.append("align", "true"); // Auto-create alignment project
 
-    const response = await fetch(url, {
+    const response = await fetch(`${this.baseUrl}/synthesis`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        // Don't set Content-Type - let fetch set it with boundary for FormData
-      },
+      headers: { Authorization: `Bearer ${this.apiKey}` },
       body: formData,
     });
 
     if (!response.ok) {
-      const errorBody = await response.text();
+      const errorBody = await response.text().catch(() => "");
       throw new VocaSyncAPIError(
-        `API request failed: ${response.status} ${response.statusText}`,
+        `Synthesis request failed: ${response.status} ${response.statusText}`,
         response.status,
         errorBody
       );
@@ -94,92 +118,22 @@ export class VocaSyncClient {
     return (await response.json()) as SynthesisResponse;
   }
 
-  /**
-   * Create a publishable key for a project.
-   * The publishable key enables public access to project artifacts via stream endpoints.
-   *
-   * @param projectUuid - The project UUID
-   * @returns The publishable key (only returned once at creation)
-   */
-  async createPublishableKey(projectUuid: string): Promise<{ publishableKey: string }> {
-    const response = await this.request<{ publishableKey: string; projectUuid: string }>(
-      "POST",
-      `/projects/${projectUuid}/publishable-key`
-    );
-    return { publishableKey: response.publishableKey };
-  }
-
-  /**
-   * Get project status including synthesis and alignment job status.
-   */
-  async getProjectStatus(projectUuid: string): Promise<ProjectStatus> {
-    // Fetch full project from the API
+  /** Fetch a single project's status (GET /projects/{uuid}). */
+  async getProject(projectUuid: string): Promise<ProjectStatus> {
     const project = await this.request<ProjectResponse>("GET", `/projects/${projectUuid}`);
-
-    // Find synthesis artifact
-    const synthesisArtifact = project.artifacts.find((a) => a.artifactType === "synthesis");
-
-    // Map to internal ProjectStatus format
-    const status: ProjectStatus = {
+    return {
       uuid: project.projectUuid,
-      name: project.name || "",
+      name: project.name ?? "",
+      projectType: project.projectType,
       status: project.status,
+      durationSeconds: project.audioFileDurationSeconds ?? undefined,
+      error: project.error ?? undefined,
     };
-
-    // Add synthesis job info if we have a synthesis artifact or this is a synthesis project
-    if (synthesisArtifact || project.projectType === "synthesis") {
-      status.synthesisJob = {
-        status: project.status,
-        duration: project.audioFileDurationSeconds || undefined,
-        error: project.error || undefined,
-      };
-      if (synthesisArtifact?.synthesisFileKey) {
-        status.synthesisJob.audioUrl = `/stream/${projectUuid}/synthesis`;
-      }
-    }
-
-    // Add alignment job info from linked alignment project (for synthesis with align=true)
-    if (project.linkedAlignment) {
-      status.alignmentJob = {
-        status: project.linkedAlignment.status,
-        error: project.linkedAlignment.error || undefined,
-      };
-      // Alignment URL is on the synthesis project (uses linkedAlignmentProjectId internally)
-      if (project.linkedAlignment.status === "completed") {
-        status.alignmentJob.alignmentUrl = `/stream/${projectUuid}/alignment`;
-      }
-    }
-
-    return status;
   }
 
   /**
-   * Fetch alignment data (words with timestamps) from completed alignment job.
-   */
-  async getAlignment(alignmentUrl: string): Promise<AlignmentData> {
-    // The alignmentUrl may be a full URL or relative
-    const url = alignmentUrl.startsWith("http") ? alignmentUrl : `${this.baseUrl}${alignmentUrl}`;
-
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-    });
-
-    if (!response.ok) {
-      throw new VocaSyncAPIError(`Failed to fetch alignment: ${response.status}`, response.status);
-    }
-
-    const data = (await response.json()) as { words: AlignedWord[]; duration: number };
-    return data;
-  }
-
-  /**
-   * Poll project status until completion or failure.
-   *
-   * @param projectUuid - The project to poll
-   * @param options - Polling options
-   * @returns The final project status
+   * Poll a project until it completes or fails. Throws on failure (with the
+   * server `error`) or timeout.
    */
   async pollUntilComplete(
     projectUuid: string,
@@ -189,68 +143,122 @@ export class VocaSyncClient {
       onProgress?: (status: ProjectStatus) => void;
     } = {}
   ): Promise<ProjectStatus> {
-    const { maxAttempts = 120, intervalMs = 5000, onProgress } = options;
+    const { maxAttempts = 180, intervalMs = 5000, onProgress } = options;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const status = await this.getProjectStatus(projectUuid);
-
+      const status = await this.getProject(projectUuid);
       onProgress?.(status);
 
-      // Check if synthesis is complete
-      const synthComplete =
-        status.synthesisJob?.status === "completed" || status.synthesisJob?.status === "failed";
-
-      // For alignment: if synthesis is complete but alignment job doesn't exist yet,
-      // keep polling because the backend may still be creating the linked alignment project
-      const alignComplete =
-        status.alignmentJob?.status === "completed" || status.alignmentJob?.status === "failed";
-
-      // Only exit when synth is complete AND either:
-      // 1. Alignment is complete/failed, OR
-      // 2. We've polled enough times after synth completion that alignment should have started
-      //    (alignment job will appear as "pending" or "processing" once linked)
-      const shouldWaitForAlignment = synthComplete && !status.alignmentJob;
-
-      if (synthComplete && alignComplete) {
-        // Check for failures
-        if (status.synthesisJob?.status === "failed") {
-          throw new VocaSyncAPIError(
-            `Synthesis failed: ${status.synthesisJob.error || "Unknown error"}`,
-            500
-          );
-        }
-        if (status.alignmentJob?.status === "failed") {
-          throw new VocaSyncAPIError(
-            `Alignment failed: ${status.alignmentJob.error || "Unknown error"}`,
-            500
-          );
-        }
-
-        return status;
+      if (status.status === "completed") return status;
+      if (status.status === "failed") {
+        throw new VocaSyncAPIError(
+          `${status.projectType} failed: ${status.error || "Unknown error"}`,
+          500
+        );
       }
-
-      // If synthesis is complete but no alignment job yet, wait a bit longer
-      // The backend creates the alignment project asynchronously after synthesis
-      if (shouldWaitForAlignment && attempt > 5) {
-        // After 5 additional polls with no alignment appearing, assume it won't be created
-        // This handles the case where align=false or alignment language isn't supported
-        return status;
-      }
-
-      // Wait before next poll
       await sleep(intervalMs);
     }
 
-    throw new VocaSyncAPIError("Polling timeout - job did not complete in time", 408);
+    throw new VocaSyncAPIError("Polling timeout — job did not complete in time", 408);
   }
 
   /**
-   * Check API key validity and account balance.
+   * Create a publishable key for a completed project (enables public stream
+   * access). The full key is only returned once.
    */
-  async validateApiKey(): Promise<{ valid: boolean; balance?: number }> {
+  async createPublishableKey(projectUuid: string): Promise<string> {
+    const response = await this.request<{ publishableKey: string }>(
+      "POST",
+      `/projects/${projectUuid}/publishable-key`
+    );
+    return response.publishableKey;
+  }
+
+  /** Download bytes from a stream URL (used to re-upload audio for alignment). */
+  async downloadBytes(url: string): Promise<{ bytes: Uint8Array; contentType: string }> {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new VocaSyncAPIError(`Failed to download ${url}: ${response.status}`, response.status);
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const contentType = response.headers.get("content-type") ?? "audio/mpeg";
+    return { bytes, contentType };
+  }
+
+  /** Request presigned upload URLs for the alignment audio + transcript. */
+  async presignAlignment(params: {
+    audioName: string;
+    audioType: string;
+    audioSize: number;
+    transcriptSize: number;
+    language: string;
+  }): Promise<AlignmentPresignResponse> {
+    return this.request<AlignmentPresignResponse>("POST", "/alignment/presign", {
+      audioFile: { name: params.audioName, type: params.audioType, size: params.audioSize },
+      transcriptFile: { name: "transcript.txt", type: "text/plain", size: params.transcriptSize },
+      language: params.language,
+    });
+  }
+
+  /** PUT bytes to a presigned upload URL. */
+  async uploadToPresigned(
+    uploadUrl: string,
+    bytes: Uint8Array,
+    contentType: string
+  ): Promise<void> {
+    const response = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": contentType },
+      // Uint8Array is a valid fetch body at runtime; the DOM lib's BodyInit
+      // type is narrower than undici/bun's, hence the cast.
+      body: bytes as unknown as BodyInit,
+    });
+    if (!response.ok) {
+      throw new VocaSyncAPIError(
+        `S3 upload failed: ${response.status} ${response.statusText}`,
+        response.status
+      );
+    }
+  }
+
+  /** Submit an alignment job for pre-uploaded audio + transcript (JSON mode). */
+  async submitAlignment(params: {
+    projectUuid: string;
+    audioFileKey: string;
+    transcriptFileKey: string;
+    audioFileSizeBytes: number;
+    transcriptFileSizeBytes: number;
+    language: string;
+    projectName: string;
+  }): Promise<AlignmentSubmitResponse> {
+    return this.request<AlignmentSubmitResponse>("POST", "/alignment", {
+      projectUuid: params.projectUuid,
+      audioFileKey: params.audioFileKey,
+      transcriptFileKey: params.transcriptFileKey,
+      audioFileSizeBytes: params.audioFileSizeBytes,
+      transcriptFileSizeBytes: params.transcriptFileSizeBytes,
+      language: params.language,
+      projectName: params.projectName,
+    });
+  }
+
+  /** Fetch the alignment word timings from a completed alignment project. */
+  async fetchAlignmentWords(
+    alignmentStreamUrl: string
+  ): Promise<{ words: AlignedWord[]; duration: number }> {
+    const response = await fetch(alignmentStreamUrl);
+    if (!response.ok) {
+      throw new VocaSyncAPIError(`Failed to fetch alignment: ${response.status}`, response.status);
+    }
+    const data = (await response.json()) as { words?: AlignedWord[]; duration?: number };
+    return { words: data.words ?? [], duration: data.duration ?? 0 };
+  }
+
+  /** Validate the API key and return the prepaid balance in cents. */
+  async validateApiKey(): Promise<{ valid: boolean; balanceCents?: number }> {
     try {
-      const response = await this.request<{ balance: number }>("GET", "/account");
-      return { valid: true, balance: response.balance };
+      const response = await this.request<{ plan?: { balanceCents?: number } }>("GET", "/me");
+      return { valid: true, balanceCents: response.plan?.balanceCents };
     } catch (error) {
       if (error instanceof VocaSyncAPIError && error.statusCode === 401) {
         return { valid: false };
@@ -260,9 +268,14 @@ export class VocaSyncClient {
   }
 }
 
-/**
- * Custom error class for VocaSync API errors.
- */
+/** Append a publishable key to a stream URL. */
+export function withPublishableKey(url: string, publishableKey: string): string {
+  const u = new URL(url);
+  u.searchParams.set("pk", publishableKey);
+  return u.toString();
+}
+
+/** Custom error class for VocaSync API errors. */
 export class VocaSyncAPIError extends Error {
   statusCode: number;
   responseBody?: string;
@@ -275,46 +288,18 @@ export class VocaSyncAPIError extends Error {
   }
 }
 
-/**
- * Sleep utility for polling.
- */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Create a VocaSync client from configuration.
- */
+/** Create a VocaSync client from configuration (reads VOCASYNC_API_KEY). */
 export function createClient(_config: VocaSyncConfig): VocaSyncClient {
   const apiKey = process.env.VOCASYNC_API_KEY;
-
   if (!apiKey) {
     throw new Error(
       "VOCASYNC_API_KEY environment variable is not set.\n" +
         "Get your API key at https://vocasync.io and add it to your .env file."
     );
   }
-
   return new VocaSyncClient(apiKey);
-}
-
-/**
- * Get streaming URLs for stable audio/alignment access.
- * These URLs don't expire and redirect to fresh presigned URLs on each request.
- */
-export function getStreamingUrls(
-  projectUuid: string,
-  baseUrl = "https://vocasync.io/api/v1"
-): {
-  synthesisUrl: string;
-  alignmentUrl: string;
-  srtUrl: string;
-  vttUrl: string;
-} {
-  return {
-    synthesisUrl: `${baseUrl}/stream/${projectUuid}/synthesis`,
-    alignmentUrl: `${baseUrl}/stream/${projectUuid}/alignment`,
-    srtUrl: `${baseUrl}/stream/${projectUuid}/subtitles.srt`,
-    vttUrl: `${baseUrl}/stream/${projectUuid}/subtitles.vtt`,
-  };
 }

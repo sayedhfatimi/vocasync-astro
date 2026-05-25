@@ -1,42 +1,69 @@
-import { type VocaSyncClient, getStreamingUrls } from "../api/client.js";
-import type { VocaSyncConfig } from "../config/index.js";
+import { type VocaSyncClient, toAlignmentLocale, withPublishableKey } from "../api/client.js";
+import { FormatSchema, LanguageSchema, type VocaSyncConfig, VoiceSchema } from "../config/index.js";
 import { getAudioEntry, loadAudioMap, saveAudioMap, setAudioEntry } from "../core/audio-map.js";
 import { loadContent } from "../core/content-loader.js";
-import { hasChanged } from "../core/hash-manager.js";
+import { computeHash } from "../core/hash-manager.js";
 import { buildSpeechDocument } from "../core/speech-builder.js";
 import type {
   AudioArtifact,
   AudioMap,
   ContentItem,
   SyncResult,
-  SyncStatus,
   SyncSummary,
 } from "../types/index.js";
 
-/**
- * Options for the sync operation.
- */
 export interface SyncOptions {
-  /** Only sync this specific slug */
   only?: string;
-  /** Force reprocessing even if content unchanged */
   force?: boolean;
-  /** Dry run - don't make API calls */
   dryRun?: boolean;
-  /** Progress callback */
   onProgress?: (message: string, type?: "info" | "success" | "warn" | "error") => void;
 }
 
-/**
- * Orchestrate the full sync process.
- *
- * 1. Load content from collection
- * 2. Build speech documents
- * 3. Compare hashes to detect changes
- * 4. Submit synthesis jobs (with align=true)
- * 5. Poll until complete
- * 6. Update audio-map.json
- */
+type Progress = NonNullable<SyncOptions["onProgress"]>;
+
+/** Resolve effective synthesis params from per-post frontmatter, falling back to config. */
+function resolveParams(
+  item: ContentItem,
+  config: VocaSyncConfig
+): { voice: string; language: string; format: string } | { error: string } {
+  const fm = item.frontmatter;
+
+  let voice = config.synthesis.voice as string;
+  if (fm.voice !== undefined && fm.voice !== null) {
+    const parsed = VoiceSchema.safeParse(fm.voice);
+    if (!parsed.success) return { error: `invalid frontmatter voice "${String(fm.voice)}"` };
+    voice = parsed.data;
+  }
+
+  let language = config.language as string;
+  if (fm.language !== undefined && fm.language !== null) {
+    const parsed = LanguageSchema.safeParse(fm.language);
+    if (!parsed.success) return { error: `invalid frontmatter language "${String(fm.language)}"` };
+    language = parsed.data;
+  }
+
+  let format = config.synthesis.format as string;
+  if (fm.format !== undefined && fm.format !== null) {
+    const parsed = FormatSchema.safeParse(fm.format);
+    if (!parsed.success) return { error: `invalid frontmatter format "${String(fm.format)}"` };
+    format = parsed.data;
+  }
+
+  return { voice, language, format };
+}
+
+/** True when an existing entry is a complete v3 artifact matching the hash. */
+function isUpToDate(entry: AudioArtifact | undefined, contentHash: string): boolean {
+  return Boolean(
+    entry &&
+      entry.contentHash === contentHash &&
+      entry.synthesisProjectUuid &&
+      entry.alignmentProjectUuid &&
+      Array.isArray(entry.words)
+  );
+}
+
+/** Orchestrate the full sync: load -> build -> two-POST synthesis+alignment -> persist. */
 export async function sync(
   config: VocaSyncConfig,
   client: VocaSyncClient,
@@ -49,202 +76,168 @@ export async function sync(
   let synced = 0;
   let errors = 0;
 
-  // Load existing audio map
   onProgress("Loading audio map...", "info");
   const audioMap = await loadAudioMap(config.output.audioMapPath);
 
-  // Load content from collection
   onProgress(`Loading content from ${config.collection.name}...`, "info");
   let items = await loadContent(config.collection, config.frontmatterField);
 
-  // Filter by slug if specified
   if (only) {
     items = items.filter((item) => item.slug === only);
-    if (items.length === 0) {
-      throw new Error(`No content found with slug: ${only}`);
-    }
+    if (items.length === 0) throw new Error(`No content found with slug: ${only}`);
   }
 
   onProgress(`Found ${items.length} content items`, "info");
 
-  // Process each item
   for (const item of items) {
     const result = await processItem(item, config, client, audioMap, { force, dryRun, onProgress });
-
     results.push(result);
-
-    if (result.status === "unchanged") {
-      unchanged++;
-    } else if (result.status === "error") {
-      errors++;
-    } else {
-      synced++;
-    }
+    if (result.status === "unchanged") unchanged++;
+    else if (result.status === "error") errors++;
+    else synced++;
   }
 
-  // Save updated audio map
   if (!dryRun && synced > 0) {
     onProgress("Saving audio map...", "info");
+    audioMap.version = 3;
     await saveAudioMap(config.output.audioMapPath, audioMap);
   }
 
-  return {
-    total: items.length,
-    unchanged,
-    synced,
-    errors,
-    results,
-  };
+  return { total: items.length, unchanged, synced, errors, results };
 }
 
-/**
- * Process a single content item.
- */
 async function processItem(
   item: ContentItem,
   config: VocaSyncConfig,
   client: VocaSyncClient,
   audioMap: AudioMap,
-  options: {
-    force: boolean;
-    dryRun: boolean;
-    onProgress: (message: string, type?: "info" | "success" | "warn" | "error") => void;
-  }
+  options: { force: boolean; dryRun: boolean; onProgress: Progress }
 ): Promise<SyncResult> {
   const { force, dryRun, onProgress } = options;
 
   try {
-    // Build speech document
+    const resolved = resolveParams(item, config);
+    if ("error" in resolved) {
+      onProgress(`⚠ ${item.slug} - skipped: ${resolved.error}`, "warn");
+      return { slug: item.slug, status: "error", error: resolved.error };
+    }
+    const { voice, language, format } = resolved;
+
     const speechDoc = await buildSpeechDocument(item, { math: config.math });
+    const contentHash = computeHash(
+      JSON.stringify([speechDoc.normalisedSpeechtext, voice, language, format])
+    );
 
-    // Check if content has changed
     const existingEntry = getAudioEntry(audioMap, item.slug);
-    const contentChanged = hasChanged(existingEntry?.contentHash, speechDoc.hash);
-
-    // Check if existing entry is missing publishable key (migration from v1)
-    const needsPublishableKey = existingEntry && !existingEntry.publishableKey;
-
-    if (!force && !contentChanged && existingEntry && !needsPublishableKey) {
+    if (!force && isUpToDate(existingEntry, contentHash)) {
       onProgress(`⏭ ${item.slug} - unchanged`, "info");
       return { slug: item.slug, status: "unchanged" };
     }
 
-    // If only missing publishable key, create it without re-synthesizing
-    if (!force && !contentChanged && existingEntry && needsPublishableKey) {
-      onProgress(`🔑 ${item.slug} - creating missing publishable key...`, "info");
-
-      if (dryRun) {
-        onProgress(`🔍 ${item.slug} - would create publishable key (dry run)`, "info");
-        return { slug: item.slug, status: "unchanged" };
-      }
-
-      try {
-        const { publishableKey } = await client.createPublishableKey(existingEntry.projectUuid);
-
-        // Update existing entry with publishable key
-        const updatedArtifact: AudioArtifact = {
-          ...existingEntry,
-          publishableKey,
-          updatedAt: new Date().toISOString(),
-        };
-        setAudioEntry(audioMap, item.slug, updatedArtifact);
-
-        onProgress(`✅ ${item.slug} - publishable key added`, "success");
-        return { slug: item.slug, status: "updated", projectUuid: existingEntry.projectUuid };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        onProgress(`❌ ${item.slug} - failed to create publishable key: ${message}`, "error");
-        return { slug: item.slug, status: "error", error: message };
-      }
-    }
-
-    const status: SyncStatus = existingEntry ? "updated" : "new";
-    onProgress(`📤 ${item.slug} - ${status}, submitting...`, "info");
+    const status = existingEntry ? "updated" : "new";
 
     if (dryRun) {
-      onProgress(`🔍 ${item.slug} - would ${status} (dry run)`, "info");
+      onProgress(
+        `🔍 ${item.slug} - would ${status} (voice=${voice}, lang=${language}) [dry run]`,
+        "info"
+      );
       return { slug: item.slug, status };
     }
 
-    // Submit synthesis with align=true
-    const response = await client.synthesize({
+    // 1. Synthesis ------------------------------------------------------------
+    onProgress(`📤 ${item.slug} - synthesizing (voice=${voice}, lang=${language})...`, "info");
+    const synthesis = await client.synthesize({
       name: `astro-${item.slug}`,
-      text: speechDoc.text,
-      voice: config.synthesis.voice,
+      text: speechDoc.speechtext,
+      voice,
       quality: config.synthesis.quality,
-      language: config.language,
+      language,
+      outputFormat: format,
+    });
+    const synthUuid = synthesis.projectUuid;
+    await client.pollUntilComplete(synthUuid, {
+      onProgress: (s) => onProgress(`   synthesis: ${s.status}`, "info"),
+    });
+    const synthesisPublishableKey = await client.createPublishableKey(synthUuid);
+
+    // 2. Alignment (explicit, client-supplied transcript) ---------------------
+    onProgress(`🔗 ${item.slug} - aligning...`, "info");
+    const audioStreamUrl = client.streamUrl(synthUuid, "synthesis");
+    const { bytes: audioBytes, contentType } = await client.downloadBytes(
+      withPublishableKey(audioStreamUrl, synthesisPublishableKey)
+    );
+    const transcriptBytes = new TextEncoder().encode(speechDoc.normalisedSpeechtext);
+    const alignmentLocale = toAlignmentLocale(language);
+
+    const presign = await client.presignAlignment({
+      audioName: `synthesis.${format}`,
+      audioType: contentType,
+      audioSize: audioBytes.byteLength,
+      transcriptSize: transcriptBytes.byteLength,
+      language: alignmentLocale,
     });
 
-    onProgress(`⏳ ${item.slug} - processing (${response.projectUuid})...`, "info");
+    await client.uploadToPresigned(presign.audio.uploadUrl, audioBytes, contentType);
+    await client.uploadToPresigned(presign.transcript.uploadUrl, transcriptBytes, "text/plain");
 
-    // Poll until complete
-    const finalStatus = await client.pollUntilComplete(response.projectUuid, {
-      onProgress: (status) => {
-        const synthStatus = status.synthesisJob?.status || "pending";
-        const alignStatus = status.alignmentJob?.status || "pending";
-        onProgress(`   synth: ${synthStatus}, align: ${alignStatus}`, "info");
-      },
+    await client.submitAlignment({
+      projectUuid: presign.projectUuid,
+      audioFileKey: presign.audio.key,
+      transcriptFileKey: presign.transcript.key,
+      audioFileSizeBytes: audioBytes.byteLength,
+      transcriptFileSizeBytes: transcriptBytes.byteLength,
+      language: alignmentLocale,
+      projectName: `astro-${item.slug}`,
     });
+    const alignUuid = presign.projectUuid;
+    await client.pollUntilComplete(alignUuid, {
+      onProgress: (s) => onProgress(`   alignment: ${s.status}`, "info"),
+    });
+    const alignmentPublishableKey = await client.createPublishableKey(alignUuid);
 
-    // Fetch alignment data
-    if (!finalStatus.alignmentJob?.alignmentUrl) {
-      throw new Error("No alignment URL returned");
-    }
+    // 3. Fetch timings + persist ---------------------------------------------
+    const { words, duration } = await client.fetchAlignmentWords(
+      withPublishableKey(client.streamUrl(alignUuid, "alignment"), alignmentPublishableKey)
+    );
+    // The alignment stream may omit total duration; fall back to the last word's end.
+    const effectiveDuration = duration || (words.length ? words[words.length - 1].end : 0);
 
-    const alignmentData = await client.getAlignment(finalStatus.alignmentJob.alignmentUrl);
-
-    // Create publishable key for public streaming access
-    onProgress(`🔑 ${item.slug} - creating publishable key...`, "info");
-    const { publishableKey } = await client.createPublishableKey(response.projectUuid);
-
-    // Get stable streaming URLs
-    const streamingUrls = getStreamingUrls(response.projectUuid);
-
-    // Create audio artifact with publishable key
+    const now = new Date().toISOString();
     const artifact: AudioArtifact = {
-      projectUuid: response.projectUuid,
-      contentHash: speechDoc.hash,
-      duration: alignmentData.duration,
-      audioUrl: streamingUrls.synthesisUrl,
-      alignmentUrl: streamingUrls.alignmentUrl,
-      publishableKey,
-      createdAt: existingEntry?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      contentHash,
+      voice,
+      language,
+      format,
+      synthesisProjectUuid: synthUuid,
+      synthesisPublishableKey,
+      audioUrl: audioStreamUrl,
+      alignmentProjectUuid: alignUuid,
+      alignmentPublishableKey,
+      words,
+      duration: effectiveDuration,
+      mathSpeech: speechDoc.mathSpeech,
+      createdAt: existingEntry?.createdAt ?? now,
+      updatedAt: now,
     };
-
-    // Update audio map
     setAudioEntry(audioMap, item.slug, artifact);
 
-    onProgress(`✅ ${item.slug} - ${status} complete`, "success");
-
-    return {
-      slug: item.slug,
-      status,
-      projectUuid: response.projectUuid,
-    };
+    onProgress(`✅ ${item.slug} - ${status} complete (${words.length} words)`, "success");
+    return { slug: item.slug, status, projectUuid: synthUuid };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     onProgress(`❌ ${item.slug} - error: ${message}`, "error");
-
-    return {
-      slug: item.slug,
-      status: "error",
-      error: message,
-    };
+    // Do not persist a partial entry; leave any prior entry intact.
+    return { slug: item.slug, status: "error", error: message };
   }
 }
 
-/**
- * Check if the configuration and API key are valid.
- */
+/** Validate config + API key. Balance is returned by /me in cents. */
 export async function checkConfig(
   config: VocaSyncConfig,
   client: VocaSyncClient
-): Promise<{ valid: boolean; message: string; balance?: number }> {
+): Promise<{ valid: boolean; message: string; balanceCents?: number }> {
   try {
-    // Validate API key
     const validation = await client.validateApiKey();
-
     if (!validation.valid) {
       return {
         valid: false,
@@ -252,19 +245,19 @@ export async function checkConfig(
       };
     }
 
-    // Check content collection
     const items = await loadContent(config.collection, config.frontmatterField);
+    const balance =
+      validation.balanceCents !== undefined
+        ? `$${(validation.balanceCents / 100).toFixed(2)}`
+        : "unknown";
 
     return {
       valid: true,
-      message: `Configuration valid. Found ${items.length} content items. Balance: $${validation.balance?.toFixed(2) ?? "?"}.`,
-      balance: validation.balance,
+      message: `Configuration valid. Found ${items.length} content items. Balance: ${balance}.`,
+      balanceCents: validation.balanceCents,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return {
-      valid: false,
-      message: `Configuration error: ${message}`,
-    };
+    return { valid: false, message: `Configuration error: ${message}` };
   }
 }

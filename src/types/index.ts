@@ -13,15 +13,26 @@ export interface ContentItem {
 }
 
 /**
- * Processed speech document ready for synthesis
+ * Processed speech document ready for synthesis + alignment.
+ *
+ * `speechtext` is POSTed to /synthesis (expanded spoken form, punctuation
+ * preserved). `normalisedSpeechtext` is POSTed as the alignment transcript
+ * (stripped form) and is the exact token stream the rehype plugin indexes.
  */
 export interface SpeechDocument {
   /** Unique slug identifier */
   slug: string;
-  /** Plain text for TTS synthesis */
-  text: string;
-  /** Content hash for change detection */
-  hash: string;
+  /** Expanded spoken text for TTS synthesis */
+  speechtext: string;
+  /** Normalised transcript for alignment (token-for-token with data-i) */
+  normalisedSpeechtext: string;
+  /**
+   * Spoken form of each math expression, keyed by `${'d'|'i'}:${latex}`
+   * (d = display/block, i = inline). The rehype plugin reuses these so the
+   * math tokens it counts match what was synthesized — math-to-speech runs
+   * only here (Node/CLI), never in the Astro/Vite build.
+   */
+  mathSpeech: Record<string, string>;
   /** Source file path */
   source: string;
 }
@@ -39,21 +50,34 @@ export interface AlignedWord {
 }
 
 /**
- * Audio artifact entry in audio-map.json
+ * Audio artifact entry in audio-map.json (v3).
+ *
+ * The two-POST flow produces TWO projects: a synthesis project (whose
+ * stream serves the audio) and an alignment project (used at build time
+ * to fetch the word timings, which are embedded here as `words`). Each
+ * project has its own publishable key.
  */
 export interface AudioArtifact {
-  /** Synthesis project UUID */
-  projectUuid: string;
-  /** Content hash used for change detection */
+  /** Hash of normalisedSpeechtext + resolved voice/language/format */
   contentHash: string;
+  /** Resolved synthesis params (also part of change detection) */
+  voice: string;
+  language: string;
+  format: string;
+  /** Synthesis project (serves the audio stream) */
+  synthesisProjectUuid: string;
+  synthesisPublishableKey: string;
+  /** Stable audio stream URL (without the publishable key) */
+  audioUrl: string;
+  /** Alignment project (source of the embedded timings) */
+  alignmentProjectUuid: string;
+  alignmentPublishableKey: string;
+  /** Word timings, indexed positionally by the rehype plugin's data-i */
+  words: AlignedWord[];
   /** Total audio duration in seconds */
   duration: number;
-  /** URL to stream audio (stable, non-expiring) */
-  audioUrl: string;
-  /** URL to fetch alignment JSON (stable, non-expiring) */
-  alignmentUrl: string;
-  /** Publishable key for streaming endpoint authentication */
-  publishableKey?: string;
+  /** Spoken form of each math expression, keyed by `${'d'|'i'}:${latex}`. */
+  mathSpeech?: Record<string, string>;
   /** When this artifact was created */
   createdAt: string;
   /** When this artifact was last updated */
@@ -65,7 +89,7 @@ export interface AudioArtifact {
  */
 export interface AudioMap {
   /** Version of the audio-map schema */
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   /** When the map was last updated */
   updatedAt: string;
   /** Map of slug -> audio artifact */
@@ -73,24 +97,55 @@ export interface AudioMap {
 }
 
 /**
- * VocaSync API synthesis request
+ * VocaSync API synthesis request (FormData fields).
  */
 export interface SynthesisRequest {
   name: string;
   text: string;
   voice: string;
-  speed?: number;
-  quality?: "sd" | "hd";
-  align?: boolean;
-  language?: string;
+  quality: "sd" | "hd";
+  /** ISO 639-1 language code */
+  language: string;
+  /** Output container: mp3 | aac | opus | flac | wav */
+  outputFormat: string;
 }
 
 /**
- * VocaSync API synthesis response
+ * VocaSync API synthesis response (POST /v1/synthesis).
  */
 export interface SynthesisResponse {
   projectUuid: string;
-  estimatedCost: number;
+  projectId?: string;
+  characterCount?: number;
+  status?: JobStatus;
+}
+
+/**
+ * Presigned upload target for one file.
+ */
+export interface PresignTarget {
+  key: string;
+  uploadUrl: string;
+}
+
+/**
+ * Response from POST /v1/alignment/presign.
+ */
+export interface AlignmentPresignResponse {
+  /** UUID minted for the alignment project; reused in the /alignment POST */
+  projectUuid: string;
+  audio: PresignTarget;
+  transcript: PresignTarget;
+}
+
+/**
+ * Response from POST /v1/alignment (JSON mode).
+ */
+export interface AlignmentSubmitResponse {
+  projectUuid: string;
+  projectId?: string;
+  jobId?: string;
+  status?: JobStatus;
 }
 
 /**
@@ -138,23 +193,14 @@ export interface JobResponse {
 }
 
 /**
- * Linked alignment project status
- */
-export interface LinkedAlignmentStatus {
-  projectUuid: string;
-  status: JobStatus;
-  error?: string | null;
-}
-
-/**
- * Project response from /projects/{uuid} endpoint
+ * Project response from GET /v1/projects/{uuid}.
  */
 export interface ProjectResponse {
   id: string;
   projectUuid: string;
   name: string | null;
   description: string | null;
-  projectType: "alignment" | "synthesis";
+  projectType: "alignment" | "synthesis" | "transcription" | "translation";
   source: "web" | "api";
   language: string | null;
   status: JobStatus;
@@ -165,27 +211,19 @@ export interface ProjectResponse {
   error: string | null;
   artifacts: ArtifactResponse[];
   latestJob?: JobResponse | null;
-  linkedAlignment?: LinkedAlignmentStatus | null;
 }
 
 /**
- * Project status (internal representation)
+ * Project status (internal, single-project representation used by the
+ * poller and the `status` CLI command).
  */
 export interface ProjectStatus {
   uuid: string;
   name: string;
+  projectType: ProjectResponse["projectType"];
   status: JobStatus;
-  synthesisJob?: {
-    status: JobStatus;
-    audioUrl?: string;
-    duration?: number;
-    error?: string;
-  };
-  alignmentJob?: {
-    status: JobStatus;
-    alignmentUrl?: string;
-    error?: string;
-  };
+  durationSeconds?: number;
+  error?: string;
 }
 
 /**

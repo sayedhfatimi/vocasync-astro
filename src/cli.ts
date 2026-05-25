@@ -214,25 +214,18 @@ async function main(): Promise<void> {
         }
 
         log(`Checking status for ${projectId}...`, "info");
-        const status = await client.getProjectStatus(projectId);
+        const status = await client.getProject(projectId);
 
         console.log("");
         console.log(`${colors.bold}Project:${colors.reset} ${status.uuid}`);
         console.log(`${colors.bold}Name:${colors.reset} ${status.name}`);
-        console.log(
-          `${colors.bold}Synthesis:${colors.reset} ${status.synthesisJob?.status || "N/A"}`
-        );
-        console.log(
-          `${colors.bold}Alignment:${colors.reset} ${status.alignmentJob?.status || "N/A"}`
-        );
-
-        if (status.synthesisJob?.audioUrl) {
-          console.log(`${colors.bold}Audio:${colors.reset} ${status.synthesisJob.audioUrl}`);
+        console.log(`${colors.bold}Type:${colors.reset} ${status.projectType}`);
+        console.log(`${colors.bold}Status:${colors.reset} ${status.status}`);
+        if (status.durationSeconds !== undefined) {
+          console.log(`${colors.bold}Duration:${colors.reset} ${status.durationSeconds}s`);
         }
-        if (status.alignmentJob?.alignmentUrl) {
-          console.log(
-            `${colors.bold}Alignment:${colors.reset} ${status.alignmentJob.alignmentUrl}`
-          );
+        if (status.error) {
+          console.log(`${colors.bold}Error:${colors.reset} ${status.error}`);
         }
 
         process.exit(0);

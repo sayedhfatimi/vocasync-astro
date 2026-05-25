@@ -1,41 +1,22 @@
-import type { LaTeXExpression, SREOptions } from "./index.js";
-
-let latexToSpeech: ((exprs: LaTeXExpression[], options?: SREOptions) => Promise<string[]>) | null =
-  null;
-let loadAttempted = false;
-let warnedFailure = false;
+import { latexToSpeech } from "./index.js";
 
 const cache = new Map<string, Promise<string>>();
+let warnedFailure = false;
 
 function normalizeWhitespace(value = ""): string {
   return value.replace(/\r/g, "").replace(/\s+/g, " ").trim();
 }
 
 /**
- * Lazily load the latex-to-speech module.
- * Returns false if optional peer dependencies are not installed.
- */
-async function ensureLoaded(): Promise<boolean> {
-  if (loadAttempted) return latexToSpeech !== null;
-  loadAttempted = true;
-  try {
-    const mod = await import("./index.js");
-    latexToSpeech = mod.latexToSpeech || mod.default;
-    return latexToSpeech !== null;
-  } catch {
-    console.warn(
-      "[vocasync] Math-to-speech initialization failed. Install optional dependencies:",
-      "\n  npm install speech-rule-engine mathjax-full"
-    );
-    return false;
-  }
-}
-
-/**
  * Convert a LaTeX expression to spoken text.
  *
- * Handles lazy loading, caching, normalization, and error recovery.
- * Cache key includes style and display mode for correctness.
+ * `latexToSpeech` is imported statically (it lazy-loads the optional
+ * speech-rule-engine / mathjax-full deps internally), which is robust under
+ * Astro's Vite SSR loader where a lazy `import()` of this module returned a
+ * namespace without the expected named export.
+ *
+ * Falls back to the raw LaTeX if the math dependencies are unavailable or
+ * conversion fails, so a build never crashes on math content.
  */
 export async function speakLatex(
   latex: string,
@@ -45,22 +26,18 @@ export async function speakLatex(
   const trimmed = String(latex ?? "").trim();
   if (!trimmed) return "";
 
-  if (!(await ensureLoaded())) {
-    return trimmed; // Fallback to raw LaTeX
-  }
-
   const cacheKey = `${style}:${display}:${trimmed}`;
   if (!cache.has(cacheKey)) {
     const pending = (async () => {
       try {
-        const result = await latexToSpeech!([{ latex: trimmed, display }], {
+        const result = await latexToSpeech([{ latex: trimmed, display }], {
           domain: style,
           style: "default",
           locale: "en",
           modality: "speech",
         });
         const spoken = Array.isArray(result) ? result[0] : String(result ?? "");
-        return normalizeWhitespace(spoken);
+        return normalizeWhitespace(spoken) || trimmed;
       } catch (error) {
         if (!warnedFailure) {
           console.warn(

@@ -1,9 +1,19 @@
 import { z } from "zod";
 
 /**
- * Supported TTS voices
+ * Supported TTS voices (matches the platform's 9 OpenAI voices)
  */
-export const VoiceSchema = z.enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"]);
+export const VoiceSchema = z.enum([
+  "alloy",
+  "ash",
+  "coral",
+  "echo",
+  "fable",
+  "onyx",
+  "nova",
+  "sage",
+  "shimmer",
+]);
 export type Voice = z.infer<typeof VoiceSchema>;
 
 /**
@@ -13,9 +23,10 @@ export const QualitySchema = z.enum(["sd", "hd"]);
 export type Quality = z.infer<typeof QualitySchema>;
 
 /**
- * Supported audio formats
+ * Supported audio output formats (matches the platform's OUTPUT_FORMATS).
+ * mp3 is the default for the broadest <audio> compatibility.
  */
-export const FormatSchema = z.enum(["mp3", "opus", "aac", "flac"]);
+export const FormatSchema = z.enum(["mp3", "aac", "opus", "flac", "wav"]);
 export type Format = z.infer<typeof FormatSchema>;
 
 /**
