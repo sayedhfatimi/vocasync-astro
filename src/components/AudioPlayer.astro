@@ -889,6 +889,11 @@ const audioDataJson = audioEntry ? JSON.stringify({
         clearHighlights();
       } else {
         updateHighlighting();
+        // Toggling off stops the rAF loop; restart it so highlighting resumes
+        // following the audio when re-enabled mid-playback.
+        if (!audio.paused && !audio.ended) {
+          startHighlightLoop();
+        }
       }
     }
     
